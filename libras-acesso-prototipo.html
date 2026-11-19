@@ -1,0 +1,2443 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5fa5">
+  <meta name="description" content="Aplicativo de acessibilidade para pessoas surdas e com deficiência auditiva: dicionário de sinais, soletração, lições de Libras, legendas ao vivo, cartões de comunicação e alerta visual de sons.">
+  <link rel="stylesheet" href="style.css">
+  <title>Libras Acesso</title>
+  <script>
+// Configuração do frontend (carregada antes do app).
+window.APP_CONFIG = {
+  // URL base da API. Deixe vazio quando o servidor Node serve o frontend (mesma origem).
+  // Se o frontend estiver em outro domínio, use a URL do Render, ex.: 'https://libras-acesso.onrender.com'
+  API_URL: '',
+
+  // Pasta com imagens do alfabeto manual (A.png ... Z.png), ex.: '/assets/alfabeto'.
+  // Deixe null para mostrar apenas a letra.
+  ALPHABET_IMAGE_BASE: null,
+
+  // Registra o service worker (instalação como app e uso offline).
+  PWA: false
+};
+
+</script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Pular para o conteúdo principal</a>
+
+  <!-- Regiões ao vivo para leitores de tela -->
+  <div id="live-polite" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="live-assertive" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- Alerta visual de som -->
+  <div id="flash" class="flash" aria-hidden="true"></div>
+  <div id="alert-toast" class="toast" role="alert" hidden></div>
+
+  <header class="site-header">
+    <div class="wrap header-top">
+      <a class="brand" href="#inicio" aria-label="Libras Acesso, ir para o início">
+        <span class="brand-mark" aria-hidden="true">LA</span>
+        <span class="brand-name">Libras Acesso</span>
+      </a>
+      <div class="header-actions">
+        <span id="alert-chip" class="chip chip-alert" hidden>Alerta de som ativo</span>
+        <span id="net-status" class="chip" role="status">Carregando…</span>
+        <button id="a11y-open" class="btn" type="button" aria-haspopup="dialog">Acessibilidade</button>
+      </div>
+    </div>
+    <div class="wrap">
+      <nav class="main-nav" aria-label="Principal">
+        <ul>
+          <li><a href="#inicio">Início</a></li>
+          <li><a href="#dicionario">Dicionário</a></li>
+          <li><a href="#alfabeto">Alfabeto</a></li>
+          <li><a href="#aprender">Aprender</a></li>
+          <li><a href="#comunicar">Comunicar</a></li>
+          <li><a href="#legendas">Legendas ao vivo</a></li>
+          <li><a href="#alerta">Alerta de som</a></li>
+          <li><a href="#progresso">Meu progresso</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap" tabindex="-1">
+
+    <!-- INÍCIO -->
+    <section data-view="inicio" aria-labelledby="h-inicio">
+      <h1 id="h-inicio" tabindex="-1">Comunicação e Libras ao seu alcance</h1>
+      <p class="lead">Ferramentas para conversar, aprender Libras e perceber sons do ambiente, pensadas para pessoas surdas e com deficiência auditiva.</p>
+
+      <ul class="feature-grid">
+        <li><a class="feature" href="#dicionario"><strong>Dicionário de sinais</strong><span>Busque palavras, leia a descrição de cada sinal e salve favoritos.</span></a></li>
+        <li><a class="feature" href="#alfabeto"><strong>Alfabeto e soletração</strong><span>Digite uma palavra e veja a soletração letra por letra.</span></a></li>
+        <li><a class="feature" href="#aprender"><strong>Lições e quiz</strong><span>Pratique grupos de sinais e acompanhe sua pontuação.</span></a></li>
+        <li><a class="feature" href="#comunicar"><strong>Cartões de comunicação</strong><span>Mostre frases em tela cheia para quem não sabe Libras.</span></a></li>
+        <li><a class="feature" href="#legendas"><strong>Legendas ao vivo</strong><span>Transforme a fala de quem está perto em texto grande.</span></a></li>
+        <li><a class="feature" href="#alerta"><strong>Alerta de som</strong><span>Receba aviso visual e vibração quando houver um som alto.</span></a></li>
+      </ul>
+
+      <aside class="notice" aria-labelledby="h-aviso">
+        <h2 id="h-aviso">Sobre o conteúdo</h2>
+        <p>Os sinais deste protótipo são exemplos para demonstrar o aplicativo. Antes de publicar, substitua as descrições por vídeos e textos revisados por intérpretes e pessoas surdas fluentes em Libras.</p>
+      </aside>
+
+      <section class="emergency" aria-labelledby="h-emerg">
+        <h2 id="h-emerg">Emergência no Brasil</h2>
+        <ul class="emergency-list">
+          <li><a href="tel:192"><strong>192</strong> SAMU</a></li>
+          <li><a href="tel:193"><strong>193</strong> Bombeiros</a></li>
+          <li><a href="tel:190"><strong>190</strong> Polícia</a></li>
+        </ul>
+        <p class="muted">Peça a alguém por perto para ligar. Em <a href="#comunicar">Comunicar</a> há cartões prontos para pedir ajuda.</p>
+      </section>
+    </section>
+
+    <!-- DICIONÁRIO -->
+    <section data-view="dicionario" aria-labelledby="h-dic" hidden>
+      <h1 id="h-dic" tabindex="-1">Dicionário de sinais</h1>
+      <div class="field">
+        <label for="dict-search">Buscar sinal</label>
+        <input id="dict-search" type="search" autocomplete="off" placeholder="Ex.: obrigado, água, médico">
+      </div>
+      <div id="dict-chips" class="chips" role="group" aria-label="Filtrar por categoria"></div>
+      <p id="dict-status" class="muted" role="status"></p>
+      <ul id="dict-grid" class="grid sign-grid"></ul>
+      <p id="dict-empty" class="empty" hidden>Nenhum sinal encontrado. Tente outra palavra ou escolha outra categoria.</p>
+    </section>
+
+    <!-- ALFABETO -->
+    <section data-view="alfabeto" aria-labelledby="h-alfa" hidden>
+      <h1 id="h-alfa" tabindex="-1">Alfabeto e soletração</h1>
+      <p class="lead">A soletração manual (datilologia) é usada para nomes de pessoas e lugares e para palavras sem sinal próprio.</p>
+
+      <aside class="notice notice-warn">
+        <p><strong>Sobre os emojis de mão.</strong> Eles só lembram a forma da mão em algumas letras e não substituem o sinal oficial. Confira cada letra em vídeo ou com um instrutor de Libras.</p>
+      </aside>
+
+      <form id="spell-form" class="spell-form">
+        <div class="field">
+          <label for="spell-input">Digite uma palavra ou nome</label>
+          <input id="spell-input" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Maria">
+          <p class="hint" id="spell-hint">Acentos e símbolos são ignorados. Use até 40 caracteres.</p>
+        </div>
+      </form>
+
+      <div class="spell-panel">
+        <div id="spell-stage" class="spell-stage" aria-hidden="true">?</div>
+        <p id="spell-count" class="spell-count" role="status">Digite uma palavra para começar.</p>
+        <div class="btn-row">
+          <button id="spell-prev" class="btn" type="button" disabled>Letra anterior</button>
+          <button id="spell-next" class="btn" type="button" disabled>Próxima letra</button>
+          <button id="spell-play" class="btn btn-primary" type="button" disabled aria-pressed="false">Reproduzir soletração</button>
+        </div>
+        <div class="field inline">
+          <label for="spell-speed">Velocidade</label>
+          <select id="spell-speed">
+            <option value="2000">Lenta</option>
+            <option value="1200" selected>Normal</option>
+            <option value="700">Rápida</option>
+          </select>
+        </div>
+        <ol id="spell-tiles" class="tiles" aria-label="Letras da palavra"></ol>
+      </div>
+
+      <h2>Todas as letras</h2>
+      <ul id="alpha-grid" class="tiles tiles-all"></ul>
+    </section>
+
+    <!-- APRENDER -->
+    <section data-view="aprender" aria-labelledby="h-apr" hidden>
+      <h1 id="h-apr" tabindex="-1">Aprender Libras</h1>
+      <div id="lessons-panel">
+        <p class="lead">Escolha uma lição. Em cada pergunta você lê a descrição de um sinal e escolhe a palavra correspondente.</p>
+        <ul id="lesson-list" class="grid lesson-grid"></ul>
+      </div>
+      <div id="quiz" hidden></div>
+    </section>
+
+    <!-- COMUNICAR -->
+    <section data-view="comunicar" aria-labelledby="h-com" hidden>
+      <h1 id="h-com" tabindex="-1">Cartões de comunicação</h1>
+      <p class="lead">Toque em um cartão para mostrar a frase em tela cheia para quem está com você. Também é possível ouvir a frase em voz alta.</p>
+
+      <form id="custom-form" class="custom-form">
+        <div class="field">
+          <label for="custom-text">Escreva sua própria mensagem</label>
+          <textarea id="custom-text" rows="2" maxlength="280" placeholder="Digite aqui e mostre para a outra pessoa"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Mostrar em tela cheia</button>
+      </form>
+
+      <div id="phrase-groups"></div>
+    </section>
+
+    <!-- LEGENDAS -->
+    <section data-view="legendas" aria-labelledby="h-leg" hidden>
+      <h1 id="h-leg" tabindex="-1">Legendas ao vivo</h1>
+      <p class="lead">O microfone capta a fala por perto e mostra o texto em letras grandes.</p>
+
+      <p id="cap-unsupported" class="notice notice-warn" hidden>Este navegador não tem reconhecimento de voz. Experimente o Google Chrome ou o Microsoft Edge, com conexão à internet.</p>
+
+      <div class="controls">
+        <button id="cap-start" class="btn btn-primary" type="button" aria-pressed="false">Iniciar legendas</button>
+        <div class="field inline">
+          <label for="cap-lang">Idioma da fala</label>
+          <select id="cap-lang">
+            <option value="pt-BR" selected>Português (Brasil)</option>
+            <option value="en-US">Inglês (EUA)</option>
+            <option value="es-ES">Espanhol</option>
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="cap-size">Tamanho das letras</label>
+          <input id="cap-size" type="range" min="1.25" max="4" step="0.25" value="2">
+        </div>
+      </div>
+
+      <p id="cap-status" class="muted" role="status">Pronto para iniciar.</p>
+      <div id="cap-log" class="captions-box" role="log" aria-live="polite" aria-label="Texto reconhecido" tabindex="0"></div>
+      <p id="cap-interim" class="captions-interim" aria-hidden="true"></p>
+
+      <div class="btn-row">
+        <button id="cap-copy" class="btn" type="button">Copiar texto</button>
+        <button id="cap-save" class="btn" type="button">Salvar em arquivo .txt</button>
+        <button id="cap-clear" class="btn" type="button">Limpar</button>
+      </div>
+      <p class="hint">O reconhecimento de voz é feito pelo navegador. Em alguns navegadores o áudio é enviado a um serviço online. A precisão varia com ruído, sotaque e distância.</p>
+    </section>
+
+    <!-- ALERTA DE SOM -->
+    <section data-view="alerta" aria-labelledby="h-snd" hidden>
+      <h1 id="h-snd" tabindex="-1">Alerta de som</h1>
+      <p class="lead">Quando o volume do ambiente passa do limite escolhido, o aplicativo mostra um aviso grande, pisca a tela e vibra o aparelho.</p>
+
+      <div class="controls">
+        <button id="snd-start" class="btn btn-primary" type="button" aria-pressed="false">Ativar alerta</button>
+        <button id="snd-test" class="btn" type="button">Testar o aviso</button>
+      </div>
+
+      <div class="field">
+        <label for="snd-threshold">Limite de volume: <output id="snd-threshold-out" for="snd-threshold">70%</output></label>
+        <input id="snd-threshold" type="range" min="20" max="95" step="5" value="70">
+        <p class="hint">Valores menores avisam com sons mais baixos.</p>
+      </div>
+
+      <div class="meter-block">
+        <span id="snd-meter-label" class="meter-label">Volume do ambiente</span>
+        <div id="snd-meter" class="meter" role="meter" aria-labelledby="snd-meter-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="snd-fill" class="meter-fill"></div>
+          <div id="snd-mark" class="meter-mark"></div>
+        </div>
+      </div>
+
+      <p id="snd-status" class="muted" role="status">O alerta está desligado.</p>
+
+      <h2>Avisos recentes</h2>
+      <ol id="snd-history" class="history"><li class="muted">Nenhum aviso ainda.</li></ol>
+
+      <aside class="notice notice-warn">
+        <p><strong>Limites importantes.</strong> O alerta mede apenas o volume, não identifica o tipo de som (campainha, alarme, choro). Mantenha esta página aberta e a tela ligada, e não use como único meio de segurança contra incêndio ou alarmes.</p>
+      </aside>
+    </section>
+
+    <!-- PROGRESSO -->
+    <section data-view="progresso" aria-labelledby="h-prog" hidden>
+      <h1 id="h-prog" tabindex="-1">Meu progresso</h1>
+
+      <dl id="stats" class="stats"></dl>
+
+      <h2>Sinais favoritos</h2>
+      <ul id="fav-list" class="grid sign-grid"></ul>
+      <p id="fav-empty" class="empty" hidden>Você ainda não favoritou nenhum sinal. No dicionário, use o botão de estrela.</p>
+
+      <h2>Lições</h2>
+      <div class="table-scroll">
+        <table class="table">
+          <caption class="sr-only">Melhor pontuação por lição</caption>
+          <thead><tr><th scope="col">Lição</th><th scope="col">Melhor pontuação</th><th scope="col">Tentativas</th></tr></thead>
+          <tbody id="attempt-rows"></tbody>
+        </table>
+      </div>
+
+      <h2>Enviar sugestão</h2>
+      <form id="feedback-form" class="feedback-form" novalidate>
+        <div class="field">
+          <label for="fb-message">Mensagem</label>
+          <textarea id="fb-message" rows="4" maxlength="1000" required aria-describedby="fb-hint"></textarea>
+          <p class="hint" id="fb-hint">Conte o que funcionou, o que faltou ou qual sinal deve ser corrigido.</p>
+        </div>
+        <div class="field">
+          <label for="fb-contact">Contato (opcional)</label>
+          <input id="fb-contact" type="text" maxlength="200" autocomplete="email" placeholder="E-mail ou WhatsApp, se quiser resposta">
+        </div>
+        <button class="btn btn-primary" type="submit">Enviar</button>
+        <p id="fb-status" class="form-status" role="status"></p>
+      </form>
+
+      <h2>Dados neste aparelho</h2>
+      <p class="muted">Favoritos e pontuações ficam salvos neste aparelho e, quando há conexão, no servidor, ligados a um código anônimo.</p>
+      <button id="reset-data" class="btn btn-danger" type="button">Apagar meus dados</button>
+      <p id="reset-status" class="form-status" role="status"></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Libras Acesso · protótipo de acessibilidade. Libras é a Língua Brasileira de Sinais, reconhecida pela Lei nº 10.436/2002.</p>
+    </div>
+  </footer>
+
+  <!-- Diálogo: detalhes do sinal -->
+  <dialog id="sign-dialog" class="dialog" aria-labelledby="sign-title">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="sign-title"></h2>
+        <button class="btn" type="button" data-close>Fechar</button>
+      </div>
+      <div id="sign-body"></div>
+    </div>
+  </dialog>
+
+  <!-- Diálogo: mensagem em tela cheia -->
+  <dialog id="show-dialog" class="dialog dialog-full" aria-labelledby="show-label">
+    <div class="dialog-inner show-inner">
+      <p id="show-label" class="show-label">Mensagem para você</p>
+      <p id="show-text" class="show-text"></p>
+      <div class="btn-row">
+        <button id="show-speak" class="btn btn-primary" type="button">Falar em voz alta</button>
+        <button class="btn" type="button" data-close>Fechar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Diálogo: opções de acessibilidade -->
+  <dialog id="a11y-dialog" class="dialog" aria-labelledby="a11y-title">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="a11y-title">Opções de acessibilidade</h2>
+        <button class="btn" type="button" data-close>Fechar</button>
+      </div>
+
+      <div class="field">
+        <label for="opt-fontsize">Tamanho do texto: <output id="opt-fontsize-out" for="opt-fontsize">100%</output></label>
+        <input id="opt-fontsize" type="range" min="100" max="200" step="10" value="100">
+      </div>
+
+      <fieldset class="field">
+        <legend>Tema</legend>
+        <label class="choice"><input type="radio" name="opt-theme" value="auto" checked> Seguir o aparelho</label>
+        <label class="choice"><input type="radio" name="opt-theme" value="light"> Claro</label>
+        <label class="choice"><input type="radio" name="opt-theme" value="dark"> Escuro</label>
+      </fieldset>
+
+      <div class="switches">
+        <label class="choice"><input id="opt-contrast" type="checkbox"> Alto contraste</label>
+        <label class="choice"><input id="opt-motion" type="checkbox"> Reduzir animações</label>
+        <label class="choice"><input id="opt-spacing" type="checkbox"> Aumentar espaço entre letras e linhas</label>
+        <label class="choice"><input id="opt-flash" type="checkbox" checked> Piscar a tela nos alertas</label>
+        <label class="choice"><input id="opt-vibrate" type="checkbox" checked> Vibrar nos alertas</label>
+      </div>
+      <p class="hint">Com “Reduzir animações” ligado, o alerta de som usa só o aviso na tela e a vibração.</p>
+
+      <button id="opt-reset" class="btn" type="button">Restaurar padrões</button>
+    </div>
+  </dialog>
+
+  <script>
+(() => {
+'use strict';
+// ---- storage.js ----
+// Armazenamento local seguro: se o navegador bloquear o localStorage, usa a memória.
+const mem = new Map();
+const PREFIX = 'libras-acesso:';
+
+const storage = {
+  get(key, fallback = null) {
+    try {
+      const raw = localStorage.getItem(PREFIX + key);
+      if (raw !== null) return JSON.parse(raw);
+    } catch {
+      /* armazenamento indisponível */
+    }
+    return mem.has(key) ? mem.get(key) : fallback;
+  },
+  set(key, value) {
+    mem.set(key, value);
+    try {
+      localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    } catch {
+      /* armazenamento indisponível */
+    }
+  },
+  remove(key) {
+    mem.delete(key);
+    try {
+      localStorage.removeItem(PREFIX + key);
+    } catch {
+      /* armazenamento indisponível */
+    }
+  }
+};
+
+/** Código anônimo deste aparelho (não identifica a pessoa). */
+function getUserId() {
+  let id = storage.get('userId');
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `u-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+    storage.set('userId', id);
+  }
+  return id;
+}
+
+// ---- ui.js ----
+// Utilitários de interface.
+const $ = (selector, root = document) => root.querySelector(selector);
+const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+/** Cria um elemento. Textos entram como texto (nunca como HTML), o que evita XSS. */
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === false || value == null) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'text') node.textContent = value;
+    else if (key === 'dataset') Object.assign(node.dataset, value);
+    else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+    else node.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    node.append(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+let liveTimer;
+/** Anuncia uma mensagem para leitores de tela. */
+function announce(message, { assertive = false } = {}) {
+  const region = $(assertive ? '#live-assertive' : '#live-polite');
+  if (!region) return;
+  clearTimeout(liveTimer);
+  region.textContent = '';
+  liveTimer = setTimeout(() => {
+    region.textContent = message;
+  }, 60);
+}
+
+/** Minúsculas e sem acentos, para busca. */
+function normalize(text) {
+  return String(text ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function formatTime(date = new Date()) {
+  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function debounce(fn, ms = 200) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function shuffle(list) {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function prefersReducedMotion() {
+  return document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function vibrate(pattern) {
+  if (document.documentElement.dataset.vibrate === 'off') return;
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* vibração indisponível */
+  }
+}
+
+/** Aceita só endereços http(s) ou relativos. Evita "javascript:" vindo do banco de dados. */
+function safeUrl(url) {
+  return typeof url === 'string' && /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : null;
+}
+
+function openDialog(dialog) {
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.setAttribute('open', '');
+  }
+}
+
+function closeDialog(dialog) {
+  if (typeof dialog.close === 'function') dialog.close();
+  else dialog.removeAttribute('open');
+}
+
+/** Liga os botões [data-close] e o clique no fundo ao fechamento do diálogo. */
+function wireDialog(dialog) {
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) closeDialog(dialog);
+  });
+  dialog.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeDialog(dialog)));
+}
+
+// ---- data.js ----
+// Gerado por backend/scripts/build.js a partir de backend/data/seed.json. Não edite à mão.
+const OFFLINE_DATA = {
+  "categories": [
+    {
+      "id": "saudacoes",
+      "name": "Saudações",
+      "icon": "👋"
+    },
+    {
+      "id": "basico",
+      "name": "Básico",
+      "icon": "💬"
+    },
+    {
+      "id": "saude",
+      "name": "Saúde e emergência",
+      "icon": "🚑"
+    },
+    {
+      "id": "casa",
+      "name": "Casa e família",
+      "icon": "🏠"
+    },
+    {
+      "id": "alimentos",
+      "name": "Comida e bebida",
+      "icon": "🍽️"
+    }
+  ],
+  "signs": [
+    {
+      "id": "oi",
+      "word": "Oi / Olá",
+      "category": "saudacoes",
+      "emoji": "👋",
+      "description": "Mão aberta perto da lateral da cabeça, com um pequeno aceno para fora.",
+      "tip": "Acompanhe com expressão facial amigável e contato visual.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "bom-dia",
+      "word": "Bom dia",
+      "category": "saudacoes",
+      "emoji": "🌅",
+      "description": "Sinal composto: BOM seguido de DIA.",
+      "tip": "Em Libras, a expressão facial faz parte do sinal.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "boa-tarde",
+      "word": "Boa tarde",
+      "category": "saudacoes",
+      "emoji": "🌇",
+      "description": "Sinal composto: BOM seguido de TARDE.",
+      "tip": "Mantenha o mesmo ritmo e expressão do cumprimento anterior.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "boa-noite",
+      "word": "Boa noite",
+      "category": "saudacoes",
+      "emoji": "🌙",
+      "description": "Sinal composto: BOM seguido de NOITE.",
+      "tip": "Serve para cumprimentar e para se despedir à noite.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "tchau",
+      "word": "Tchau",
+      "category": "saudacoes",
+      "emoji": "🙋",
+      "description": "Mão aberta com movimento de aceno de despedida.",
+      "tip": "O aceno é visível de longe, bom para chamar atenção.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "obrigado",
+      "word": "Obrigado(a)",
+      "category": "basico",
+      "emoji": "🙏",
+      "description": "Mão aberta toca perto do queixo e se afasta para frente.",
+      "tip": "O mesmo sinal vale para obrigado e obrigada.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "por-favor",
+      "word": "Por favor",
+      "category": "basico",
+      "emoji": "🤲",
+      "description": "Mão aberta sobre o peito, com movimento circular.",
+      "tip": "Use expressão gentil, ela muda o tom do pedido.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "desculpa",
+      "word": "Desculpa",
+      "category": "basico",
+      "emoji": "😔",
+      "description": "Movimento junto ao peito que expressa pedido de desculpas.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "sim",
+      "word": "Sim",
+      "category": "basico",
+      "emoji": "✅",
+      "description": "Mão fechada balança para baixo e para cima, como um aceno de cabeça.",
+      "tip": "Acompanhe com um aceno de cabeça.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "nao",
+      "word": "Não",
+      "category": "basico",
+      "emoji": "❌",
+      "description": "Dedo indicador balança de um lado para o outro.",
+      "tip": "Acompanhe com um aceno de cabeça negativo.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "amigo",
+      "word": "Amigo(a)",
+      "category": "basico",
+      "emoji": "🤝",
+      "description": "As duas mãos se encontram à frente do corpo, indicando união.",
+      "tip": "Confirme a forma exata das mãos com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "onde",
+      "word": "Onde?",
+      "category": "basico",
+      "emoji": "❓",
+      "description": "Sinal de pergunta feito com a mão, acompanhado de expressão interrogativa.",
+      "tip": "Perguntas em Libras usam sobrancelhas franzidas e cabeça levemente inclinada.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "banheiro",
+      "word": "Banheiro",
+      "category": "basico",
+      "emoji": "🚻",
+      "description": "Sinal próprio para BANHEIRO, feito perto do corpo.",
+      "tip": "Adicione o vídeo do sinal validado para este item.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "ajuda",
+      "word": "Ajuda",
+      "category": "saude",
+      "emoji": "🆘",
+      "description": "Uma mão apoia a outra por baixo e ambas se movem para cima.",
+      "tip": "Em emergência, combine com expressão de urgência.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "medico",
+      "word": "Médico(a)",
+      "category": "saude",
+      "emoji": "🩺",
+      "description": "Dedos tocam o pulso, lembrando a verificação do pulso.",
+      "tip": "Vale para médico e médica.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "hospital",
+      "word": "Hospital",
+      "category": "saude",
+      "emoji": "🏥",
+      "description": "Sinal que remete a MÉDICO e a um local de atendimento.",
+      "tip": "Adicione o vídeo validado para mostrar a forma correta.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "emergencia",
+      "word": "Emergência",
+      "category": "saude",
+      "emoji": "🚨",
+      "description": "Sinal rápido e enfático, com expressão de urgência.",
+      "tip": "No Brasil: SAMU 192, Bombeiros 193, Polícia 190.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "dor",
+      "word": "Dor",
+      "category": "saude",
+      "emoji": "🤕",
+      "description": "Dedos indicadores se movem em direções opostas perto do local da dor.",
+      "tip": "Aponte o local do corpo onde dói.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "casa",
+      "word": "Casa",
+      "category": "casa",
+      "emoji": "🏠",
+      "description": "As duas mãos formam o telhado de uma casa.",
+      "tip": "O desenho do telhado ajuda a memorizar o sinal.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "familia",
+      "word": "Família",
+      "category": "casa",
+      "emoji": "👨‍👩‍👧",
+      "description": "Mãos desenham um círculo à frente do corpo, indicando um grupo unido.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "bebe",
+      "word": "Bebê",
+      "category": "casa",
+      "emoji": "👶",
+      "description": "Os braços embalam um bebê imaginário.",
+      "tip": "Sinal icônico: imita o gesto de embalar.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "agua",
+      "word": "Água",
+      "category": "alimentos",
+      "emoji": "💧",
+      "description": "Movimento junto à boca que remete a água.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "comer",
+      "word": "Comer",
+      "category": "alimentos",
+      "emoji": "🍽️",
+      "description": "Dedos juntos são levados à boca repetidamente.",
+      "tip": "Também pode significar comida, dependendo do contexto.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "beber",
+      "word": "Beber",
+      "category": "alimentos",
+      "emoji": "🥤",
+      "description": "A mão em formato de copo é levada à boca e inclina como se bebesse.",
+      "tip": "Sinal icônico: imita o gesto de beber.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "cafe",
+      "word": "Café",
+      "category": "alimentos",
+      "emoji": "☕",
+      "description": "Uma mão fechada gira ao lado da outra, como moer café.",
+      "tip": "O movimento imita um moedor manual.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    }
+  ],
+  "lessons": [
+    {
+      "id": "licao-saudacoes",
+      "title": "Saudações",
+      "description": "Cumprimentos para começar e encerrar uma conversa.",
+      "signIds": [
+        "oi",
+        "bom-dia",
+        "boa-tarde",
+        "boa-noite",
+        "tchau"
+      ]
+    },
+    {
+      "id": "licao-basico",
+      "title": "Educação e respostas",
+      "description": "Agradecer, pedir desculpas e responder sim ou não.",
+      "signIds": [
+        "obrigado",
+        "por-favor",
+        "desculpa",
+        "sim",
+        "nao"
+      ]
+    },
+    {
+      "id": "licao-saude",
+      "title": "Saúde e emergência",
+      "description": "Sinais para pedir ajuda e falar de saúde.",
+      "signIds": [
+        "ajuda",
+        "medico",
+        "hospital",
+        "emergencia",
+        "dor"
+      ]
+    },
+    {
+      "id": "licao-casa",
+      "title": "Casa e família",
+      "description": "Pessoas e lugares do dia a dia.",
+      "signIds": [
+        "casa",
+        "familia",
+        "bebe",
+        "amigo"
+      ]
+    },
+    {
+      "id": "licao-alimentos",
+      "title": "Comida e bebida",
+      "description": "Pedir e falar sobre alimentos e bebidas.",
+      "signIds": [
+        "agua",
+        "comer",
+        "beber",
+        "cafe"
+      ]
+    }
+  ],
+  "phrases": [
+    {
+      "id": "f-ola",
+      "text": "Olá! Tudo bem?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-bomdia",
+      "text": "Bom dia! Boa tarde! Boa noite!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-nome",
+      "text": "Meu nome é…",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-prazer",
+      "text": "Prazer em conhecer!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-licenca",
+      "text": "Com licença.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-desculpa",
+      "text": "Desculpa.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-repetir",
+      "text": "Pode repetir, por favor?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-devagar",
+      "text": "Mais devagar, por favor.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-entendi",
+      "text": "Entendi.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-nao-entendi",
+      "text": "Não entendi.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-espera",
+      "text": "Espera um pouco.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-onde",
+      "text": "Fica onde? É perto?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-custa",
+      "text": "Quanto custa?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-ajuda",
+      "text": "Preciso de ajuda.",
+      "category": "frequentes",
+      "urgent": true
+    },
+    {
+      "id": "f-tchau",
+      "text": "Tchau! Até mais!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "p-surdo",
+      "text": "Sou surdo(a). Por favor, escreva ou digite no celular para conversarmos.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-devagar",
+      "text": "Fale devagar e de frente para mim, por favor.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-interprete",
+      "text": "Preciso de um intérprete de Libras.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-escrever",
+      "text": "Você pode escrever, por favor?",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-repetir",
+      "text": "Não entendi. Pode repetir por escrito?",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-obrigado",
+      "text": "Muito obrigado(a)!",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-medico",
+      "text": "Preciso de atendimento médico.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-ambulancia",
+      "text": "Chame uma ambulância, por favor.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-dor",
+      "text": "Estou com dor. Preciso de ajuda.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-alergia",
+      "text": "Tenho alergia. Preciso avisar a equipe de saúde.",
+      "category": "saude",
+      "urgent": false
+    },
+    {
+      "id": "p-banheiro",
+      "text": "Onde fica o banheiro?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-preco",
+      "text": "Quanto custa? Pode digitar o valor?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-ajuda",
+      "text": "Pode me ajudar, por favor?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-saida",
+      "text": "Onde fica a saída?",
+      "category": "cotidiano",
+      "urgent": false
+    }
+  ]
+};
+
+// ---- api.js ----
+
+
+
+const TIMEOUT_MS = 6000;
+
+/**
+ * Cliente da API. Se o servidor não responder, o app continua funcionando
+ * com os dados de exemplo e guarda favoritos e pontuações no aparelho.
+ */
+const api = {
+  baseUrl: (window.APP_CONFIG && window.APP_CONFIG.API_URL) || '',
+  online: false,
+  userId: getUserId(),
+
+  async request(path, { method = 'GET', body } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(this.baseUrl + path, {
+        method,
+        signal: controller.signal,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      this.online = true;
+      return response.status === 204 ? null : await response.json();
+    } catch (error) {
+      if (!error.status) this.online = false; // erro de rede, não de validação
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  async loadCatalog() {
+    // Aberto como arquivo local (duplo clique) e sem API_URL: não há servidor para chamar.
+    if (!this.baseUrl && location.protocol === 'file:') {
+      this.online = false;
+      return { ...OFFLINE_DATA, source: 'offline' };
+    }
+    try {
+      const [categories, signs, lessons, phrases] = await Promise.all([
+        this.request('/api/categories'),
+        this.request('/api/signs'),
+        this.request('/api/lessons'),
+        this.request('/api/phrases')
+      ]);
+      if (![categories, signs, lessons, phrases].every(Array.isArray)) throw new Error('Resposta inesperada');
+      return { categories, signs, lessons, phrases, source: 'server' };
+    } catch {
+      this.online = false;
+      return { ...OFFLINE_DATA, source: 'offline' };
+    }
+  },
+
+  async loadFavorites() {
+    const local = storage.get('favorites', []);
+    if (!this.online) return local;
+    try {
+      const remote = await this.request(`/api/users/${this.userId}/favorites`);
+      const merged = [...new Set([...remote, ...local])];
+      storage.set('favorites', merged);
+      // envia ao servidor o que só existia no aparelho
+      for (const id of local.filter((x) => !remote.includes(x))) {
+        this.request(`/api/users/${this.userId}/favorites/${encodeURIComponent(id)}`, { method: 'PUT' }).catch(() => {});
+      }
+      return merged;
+    } catch {
+      return local;
+    }
+  },
+
+  async setFavorite(signId, isFavorite) {
+    const list = new Set(storage.get('favorites', []));
+    if (isFavorite) list.add(signId);
+    else list.delete(signId);
+    storage.set('favorites', [...list]);
+    if (!this.online) return;
+    try {
+      await this.request(`/api/users/${this.userId}/favorites/${encodeURIComponent(signId)}`, {
+        method: isFavorite ? 'PUT' : 'DELETE'
+      });
+    } catch {
+      /* fica salvo no aparelho e sincroniza na próxima abertura */
+    }
+  },
+
+  async saveAttempt({ lessonId, score, total }) {
+    const record = { lessonId, score, total, createdAt: new Date().toISOString() };
+    const local = storage.get('attempts', []);
+    local.push(record);
+    storage.set('attempts', local.slice(-200));
+    if (this.online) {
+      try {
+        await this.request(`/api/users/${this.userId}/attempts`, { method: 'POST', body: { lessonId, score, total } });
+      } catch {
+        /* mantém só no aparelho */
+      }
+    }
+    return record;
+  },
+
+  async loadAttempts() {
+    const local = [...storage.get('attempts', [])].reverse();
+    if (!this.online) return local;
+    try {
+      const remote = await this.request(`/api/users/${this.userId}/attempts`);
+      return remote.length >= local.length ? remote : local;
+    } catch {
+      return local;
+    }
+  },
+
+  async sendFeedback({ message, contact }) {
+    return this.request('/api/feedback', { method: 'POST', body: { userId: this.userId, message, contact } });
+  },
+
+  /** Apaga favoritos e pontuações no aparelho e, se possível, no servidor. */
+  async deleteMyData() {
+    storage.remove('favorites');
+    storage.remove('attempts');
+    if (!this.online) return { server: false };
+    try {
+      await this.request(`/api/users/${this.userId}`, { method: 'DELETE' });
+      return { server: true };
+    } catch {
+      return { server: false };
+    }
+  }
+};
+
+// ---- state.js ----
+
+
+
+// Estado compartilhado entre as telas.
+const state = {
+  signs: [],
+  categories: [],
+  lessons: [],
+  phrases: [],
+  favorites: new Set(),
+  attempts: [],
+  source: 'offline'
+};
+
+const bus = new EventTarget();
+const emit = (name, detail) => bus.dispatchEvent(new CustomEvent(name, { detail }));
+const on = (name, handler) => bus.addEventListener(name, (event) => handler(event.detail));
+
+const categoryName = (id) => state.categories.find((c) => c.id === id)?.name ?? id;
+const signById = (id) => state.signs.find((s) => s.id === id);
+
+async function toggleFavorite(signId) {
+  const nowFavorite = !state.favorites.has(signId);
+  if (nowFavorite) state.favorites.add(signId);
+  else state.favorites.delete(signId);
+  announce(nowFavorite ? 'Adicionado aos favoritos.' : 'Removido dos favoritos.');
+  emit('favorites', { signId, nowFavorite });
+  await api.setFavorite(signId, nowFavorite);
+  return nowFavorite;
+}
+
+// ---- a11y.js ----
+
+
+
+const DEFAULT_SETTINGS = { fontScale: 100, theme: 'auto', contrast: false, motion: false, spacing: false, flash: true, vibrate: true };
+const settings = { ...DEFAULT_SETTINGS, ...storage.get('settings', {}) };
+
+let themeApplied = false;
+
+function applySettings() {
+  const root = document.documentElement;
+  root.style.setProperty('--fs', String(settings.fontScale / 100));
+
+  // Só mexe no tema se a pessoa escolheu um (ou se fomos nós que o definimos antes).
+  if (settings.theme !== 'auto') {
+    root.setAttribute('data-theme', settings.theme);
+    themeApplied = true;
+  } else if (themeApplied) {
+    root.removeAttribute('data-theme');
+    themeApplied = false;
+  }
+
+  root.dataset.contrast = settings.contrast ? 'high' : 'normal';
+  root.dataset.motion = settings.motion ? 'reduce' : 'normal';
+  root.dataset.spacing = settings.spacing ? 'wide' : 'normal';
+  root.dataset.flash = settings.flash ? 'on' : 'off';
+  root.dataset.vibrate = settings.vibrate ? 'on' : 'off';
+}
+
+function syncControls() {
+  $('#opt-fontsize').value = settings.fontScale;
+  $('#opt-fontsize-out').textContent = `${settings.fontScale}%`;
+  document.querySelectorAll('input[name="opt-theme"]').forEach((radio) => {
+    radio.checked = radio.value === settings.theme;
+  });
+  $('#opt-contrast').checked = settings.contrast;
+  $('#opt-motion').checked = settings.motion;
+  $('#opt-spacing').checked = settings.spacing;
+  $('#opt-flash').checked = settings.flash;
+  $('#opt-vibrate').checked = settings.vibrate;
+}
+
+function update(patch) {
+  Object.assign(settings, patch);
+  storage.set('settings', settings);
+  applySettings();
+}
+
+function initA11y() {
+  applySettings();
+  syncControls();
+
+  const dialog = $('#a11y-dialog');
+  wireDialog(dialog);
+  $('#a11y-open').addEventListener('click', () => openDialog(dialog));
+
+  $('#opt-fontsize').addEventListener('input', (event) => {
+    const value = Number(event.target.value);
+    $('#opt-fontsize-out').textContent = `${value}%`;
+    update({ fontScale: value });
+  });
+  document.querySelectorAll('input[name="opt-theme"]').forEach((radio) => {
+    radio.addEventListener('change', () => update({ theme: radio.value }));
+  });
+  $('#opt-contrast').addEventListener('change', (e) => update({ contrast: e.target.checked }));
+  $('#opt-motion').addEventListener('change', (e) => update({ motion: e.target.checked }));
+  $('#opt-spacing').addEventListener('change', (e) => update({ spacing: e.target.checked }));
+  $('#opt-flash').addEventListener('change', (e) => update({ flash: e.target.checked }));
+  $('#opt-vibrate').addEventListener('change', (e) => update({ vibrate: e.target.checked }));
+  $('#opt-reset').addEventListener('click', () => {
+    update({ ...DEFAULT_SETTINGS });
+    syncControls();
+  });
+}
+
+// ---- router.js ----
+
+
+
+const VIEWS = {
+  inicio: 'Início',
+  dicionario: 'Dicionário',
+  alfabeto: 'Alfabeto',
+  aprender: 'Aprender',
+  comunicar: 'Comunicar',
+  legendas: 'Legendas ao vivo',
+  alerta: 'Alerta de som',
+  progresso: 'Meu progresso'
+};
+
+let firstNavigation = true;
+
+function navigate() {
+  const requested = location.hash.replace('#', '');
+  const view = Object.hasOwn(VIEWS, requested) ? requested : 'inicio';
+
+  $$('[data-view]').forEach((section) => {
+    section.hidden = section.dataset.view !== view;
+  });
+  $$('.main-nav a').forEach((link) => {
+    if (link.getAttribute('href') === `#${view}`) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  document.title = `${VIEWS[view]} · Libras Acesso`;
+  window.scrollTo(0, 0);
+
+  // Depois da primeira carga, leva o foco para o título da nova página.
+  if (!firstNavigation) {
+    $(`[data-view="${view}"] h1`)?.focus();
+    announce(`Página ${VIEWS[view]}`);
+  }
+  firstNavigation = false;
+  emit('route', view);
+}
+
+function initRouter() {
+  window.addEventListener('hashchange', navigate);
+  navigate();
+}
+
+// ---- dictionary.js ----
+
+
+
+let dictCategory = 'todos';
+
+const favLabel = (sign, isFavorite) => (isFavorite ? `Remover ${sign.word} dos favoritos` : `Adicionar ${sign.word} aos favoritos`);
+
+/** Botão de estrela dos cartões. */
+function favIconButton(sign) {
+  const isFavorite = state.favorites.has(sign.id);
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'fav-btn',
+      'data-fav': sign.id,
+      'aria-pressed': String(isFavorite),
+      'aria-label': favLabel(sign, isFavorite),
+      onclick: () => toggleFavorite(sign.id)
+    },
+    el('span', { 'aria-hidden': 'true', text: isFavorite ? '★' : '☆' })
+  );
+}
+
+/** Botão de texto do diálogo de detalhes. */
+function favTextButton(sign) {
+  const isFavorite = state.favorites.has(sign.id);
+  return el('button', {
+    type: 'button',
+    class: 'btn',
+    'data-favtext': sign.id,
+    'aria-pressed': String(isFavorite),
+    onclick: () => toggleFavorite(sign.id),
+    text: isFavorite ? '★ Nos favoritos' : '☆ Favoritar'
+  });
+}
+
+/** Atualiza todos os botões de favorito visíveis. */
+function syncFavButtons() {
+  document.querySelectorAll('[data-fav]').forEach((button) => {
+    const sign = signById(button.dataset.fav);
+    if (!sign) return;
+    const isFavorite = state.favorites.has(sign.id);
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.setAttribute('aria-label', favLabel(sign, isFavorite));
+    button.firstChild.textContent = isFavorite ? '★' : '☆';
+  });
+  document.querySelectorAll('[data-favtext]').forEach((button) => {
+    const isFavorite = state.favorites.has(button.dataset.favtext);
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.textContent = isFavorite ? '★ Nos favoritos' : '☆ Favoritar';
+  });
+}
+
+function signCard(sign) {
+  return el(
+    'li',
+    { class: 'sign-card' },
+    el(
+      'button',
+      { type: 'button', class: 'sign-open', onclick: () => openSignDialog(sign.id) },
+      el('span', { class: 'sign-emoji', 'aria-hidden': 'true', text: sign.emoji ?? '' }),
+      el('span', { class: 'sign-word', text: sign.word }),
+      el('span', { class: 'sign-cat', text: categoryName(sign.category) })
+    ),
+    favIconButton(sign)
+  );
+}
+
+function buildSignMedia(sign) {
+  const video = safeUrl(sign.videoUrl);
+  const image = safeUrl(sign.imageUrl);
+
+  if (video) {
+    const player = el('video', {
+      controls: true,
+      playsinline: true,
+      preload: 'metadata',
+      src: video,
+      'aria-label': `Vídeo do sinal ${sign.word}`
+    });
+    const slow = el('button', {
+      type: 'button',
+      class: 'btn',
+      'aria-pressed': 'false',
+      text: 'Ver em câmera lenta',
+      onclick: (event) => {
+        const enable = player.playbackRate !== 0.5;
+        player.playbackRate = enable ? 0.5 : 1;
+        event.currentTarget.setAttribute('aria-pressed', String(enable));
+        event.currentTarget.textContent = enable ? 'Câmera lenta ligada' : 'Ver em câmera lenta';
+      }
+    });
+    return el('div', { class: 'sign-media' }, player, slow);
+  }
+  if (image) {
+    return el('div', { class: 'sign-media' }, el('img', { src: image, alt: `Sinal de ${sign.word} em Libras` }));
+  }
+  return el(
+    'div',
+    { class: 'sign-media' },
+    el('span', { class: 'big', 'aria-hidden': 'true', text: sign.emoji ?? '' }),
+    el('p', { class: 'muted', text: 'O vídeo deste sinal ainda não foi adicionado.' })
+  );
+}
+
+function openSignDialog(id) {
+  const sign = signById(id);
+  if (!sign) return;
+  const dialog = $('#sign-dialog');
+  $('#sign-title').textContent = sign.word;
+
+  $('#sign-body').replaceChildren(
+    buildSignMedia(sign),
+    el('p', {}, el('span', { class: `badge ${sign.validated ? 'ok' : 'warn'}`, text: sign.validated ? 'Revisado por intérprete' : 'Exemplo, ainda sem revisão' })),
+    el('h3', { text: 'Como fazer' }),
+    el('p', { text: sign.description }),
+    sign.tip ? el('p', { class: 'muted', text: `Dica: ${sign.tip}` }) : null,
+    el('p', { class: 'muted', text: `Categoria: ${categoryName(sign.category)}` }),
+    el(
+      'div',
+      { class: 'btn-row' },
+      favTextButton(sign),
+      el('button', {
+        type: 'button',
+        class: 'btn',
+        text: 'Ver soletração',
+        onclick: () => {
+          closeDialog(dialog);
+          emit('spell', sign.word);
+          location.hash = '#alfabeto';
+        }
+      })
+    )
+  );
+  openDialog(dialog);
+}
+
+function initDictionary() {
+  const input = $('#dict-search');
+  const chips = $('#dict-chips');
+  const grid = $('#dict-grid');
+  const status = $('#dict-status');
+  const empty = $('#dict-empty');
+
+  wireDialog($('#sign-dialog'));
+
+  const filters = [{ id: 'todos', name: 'Todos' }, { id: 'favoritos', name: 'Favoritos' }, ...state.categories];
+  chips.replaceChildren(
+    ...filters.map((filter) =>
+      el('button', {
+        type: 'button',
+        class: 'chip-btn',
+        'data-filter': filter.id,
+        'aria-pressed': String(filter.id === dictCategory),
+        text: filter.name,
+        onclick: () => {
+          dictCategory = filter.id;
+          chips.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.filter === dictCategory)));
+          render();
+        }
+      })
+    )
+  );
+
+  function matches(sign) {
+    if (dictCategory === 'favoritos' && !state.favorites.has(sign.id)) return false;
+    if (dictCategory !== 'todos' && dictCategory !== 'favoritos' && sign.category !== dictCategory) return false;
+    const term = normalize(input.value);
+    return !term || normalize(`${sign.word} ${sign.description} ${categoryName(sign.category)}`).includes(term);
+  }
+
+  function render() {
+    const list = state.signs.filter(matches).sort((a, b) => a.word.localeCompare(b.word, 'pt-BR'));
+    grid.replaceChildren(...list.map(signCard));
+    empty.hidden = list.length > 0;
+    status.textContent = list.length === 1 ? '1 sinal encontrado' : `${list.length} sinais encontrados`;
+  }
+
+  input.addEventListener('input', debounce(render, 200));
+  on('favorites', () => {
+    syncFavButtons();
+    if (dictCategory === 'favoritos') {
+      render();
+      input.focus();
+    }
+  });
+  render();
+}
+
+// ---- alphabet.js ----
+
+
+
+const LETTERS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+// Emojis que lembram a forma da mão, só para letras em que a semelhança é clara.
+// São aproximações: o emoji não reproduz o sinal oficial. Para imagens oficiais, use ALPHABET_IMAGE_BASE.
+const HAND_HINTS = {
+  A: { emoji: '✊', text: 'punho fechado, polegar ao lado' },
+  B: { emoji: '✋', text: 'mão aberta, dedos juntos' },
+  D: { emoji: '☝️', text: 'indicador para cima' },
+  F: { emoji: '👌', text: 'polegar e indicador em círculo' },
+  R: { emoji: '🤞', text: 'indicador e médio cruzados' },
+  V: { emoji: '✌️', text: 'indicador e médio em V' },
+  Y: { emoji: '🤙', text: 'polegar e mínimo estendidos' }
+};
+
+function initAlphabet() {
+  const input = $('#spell-input');
+  const stage = $('#spell-stage');
+  const count = $('#spell-count');
+  const tiles = $('#spell-tiles');
+  const prev = $('#spell-prev');
+  const next = $('#spell-next');
+  const play = $('#spell-play');
+  const speed = $('#spell-speed');
+  const grid = $('#alpha-grid');
+  const imageBase = window.APP_CONFIG?.ALPHABET_IMAGE_BASE;
+
+  let chars = []; // letras e espaços da palavra
+  let letterPositions = []; // índices de `chars` que são letras
+  let pos = 0; // posição atual dentro de letterPositions
+  let timer = null;
+
+  function showLetter(letter) {
+    stage.replaceChildren();
+    if (imageBase) {
+      stage.append(
+        el('img', {
+          src: `${imageBase}/${letter}.png`,
+          alt: '',
+          onerror: (event) => {
+            event.currentTarget.remove();
+            stage.textContent = letter;
+          }
+        })
+      );
+    } else {
+      const hint = HAND_HINTS[letter];
+      stage.replaceChildren(
+        el('span', { text: letter }),
+        hint ? el('span', { class: 'hand-emoji', text: hint.emoji }) : null,
+        hint ? el('span', { class: 'hand-text', text: `Mão aproximada: ${hint.text}` }) : el('span', { class: 'hand-text', text: 'Sem emoji parecido. Veja o sinal em vídeo ou com um instrutor.' })
+      );
+    }
+  }
+
+  function renderTiles() {
+    tiles.replaceChildren(
+      ...chars.map((char, index) => {
+        if (char === ' ') return el('li', { class: 'tile-gap', 'aria-hidden': 'true' });
+        const step = letterPositions.indexOf(index);
+        return el(
+          'li',
+          {},
+          el('button', {
+            type: 'button',
+            class: 'tile',
+            'data-step': String(step),
+            'aria-label': `Letra ${char}, ${step + 1} de ${letterPositions.length}`,
+            text: char,
+            onclick: () => {
+              stopPlay();
+              pos = step;
+              update();
+            }
+          })
+        );
+      })
+    );
+  }
+
+  function update() {
+    const has = letterPositions.length > 0;
+    prev.disabled = !has || pos === 0;
+    next.disabled = !has || pos >= letterPositions.length - 1;
+    play.disabled = !has;
+    if (!has) {
+      stage.textContent = '?';
+      count.textContent = 'Digite uma palavra para começar.';
+      return;
+    }
+    const letter = chars[letterPositions[pos]];
+    showLetter(letter);
+    count.textContent = `Letra ${letter}, ${pos + 1} de ${letterPositions.length}`;
+    tiles.querySelectorAll('.tile').forEach((tile) => {
+      if (Number(tile.dataset.step) === pos) tile.setAttribute('aria-current', 'true');
+      else tile.removeAttribute('aria-current');
+    });
+  }
+
+  function stopPlay() {
+    clearInterval(timer);
+    timer = null;
+    play.setAttribute('aria-pressed', 'false');
+    play.textContent = 'Reproduzir soletração';
+  }
+
+  function startPlay() {
+    if (!letterPositions.length) return;
+    if (pos >= letterPositions.length - 1) pos = 0;
+    update();
+    play.setAttribute('aria-pressed', 'true');
+    play.textContent = 'Pausar';
+    timer = setInterval(() => {
+      if (pos >= letterPositions.length - 1) {
+        stopPlay();
+        return;
+      }
+      pos += 1;
+      update();
+    }, Number(speed.value));
+  }
+
+  function parse() {
+    stopPlay();
+    chars = [...normalize(input.value).replace(/\s+/g, ' ')].filter((c) => /[a-z ]/.test(c)).map((c) => c.toUpperCase());
+    letterPositions = chars.map((c, i) => (c === ' ' ? -1 : i)).filter((i) => i >= 0);
+    pos = 0;
+    renderTiles();
+    update();
+  }
+
+  input.addEventListener('input', debounce(parse, 150));
+  $('#spell-form').addEventListener('submit', (event) => event.preventDefault());
+  prev.addEventListener('click', () => {
+    stopPlay();
+    pos = Math.max(0, pos - 1);
+    update();
+  });
+  next.addEventListener('click', () => {
+    stopPlay();
+    pos = Math.min(letterPositions.length - 1, pos + 1);
+    update();
+  });
+  play.addEventListener('click', () => (timer ? stopPlay() : startPlay()));
+  speed.addEventListener('change', () => {
+    if (timer) {
+      stopPlay();
+      startPlay();
+    }
+  });
+
+  grid.replaceChildren(
+    ...LETTERS.map((letter) =>
+      el(
+        'li',
+        {},
+        el('button', {
+          type: 'button',
+          class: 'tile',
+          'aria-label': `Mostrar a letra ${letter}`,
+          text: HAND_HINTS[letter] ? `${letter} ${HAND_HINTS[letter].emoji}` : letter,
+          onclick: () => {
+            stopPlay();
+            showLetter(letter);
+            count.textContent = `Letra ${letter} do alfabeto`;
+            tiles.querySelectorAll('.tile').forEach((tile) => tile.removeAttribute('aria-current'));
+            stage.scrollIntoView?.({ block: 'center' });
+          }
+        })
+      )
+    )
+  );
+
+  // Vindo do dicionário: "Ver soletração"
+  on('spell', (word) => {
+    input.value = word;
+    parse();
+  });
+
+  update();
+}
+
+// ---- learn.js ----
+
+
+
+
+function initLearn() {
+  const list = $('#lesson-list');
+  const panel = $('#lessons-panel');
+  const quizEl = $('#quiz');
+  let quiz = null; // { lesson, questions, index, score }
+
+  function bestFor(lessonId) {
+    const tries = state.attempts.filter((a) => a.lessonId === lessonId);
+    if (!tries.length) return null;
+    return tries.reduce((best, a) => (a.score / a.total > best.score / best.total ? a : best));
+  }
+
+  function renderLessons() {
+    list.replaceChildren(
+      ...state.lessons.map((lesson) => {
+        const best = bestFor(lesson.id);
+        return el(
+          'li',
+          { class: 'lesson-card' },
+          el('h2', { text: lesson.title }),
+          el('p', { text: lesson.description }),
+          el(
+            'p',
+            {},
+            el('span', { class: 'badge', text: `${lesson.signIds.length} sinais` }),
+            ' ',
+            best
+              ? el('span', { class: 'badge ok', text: `Melhor: ${best.score} de ${best.total}` })
+              : el('span', { class: 'badge', text: 'Ainda não praticada' })
+          ),
+          el('button', {
+            type: 'button',
+            class: 'btn btn-primary',
+            'aria-label': `${best ? 'Praticar de novo' : 'Começar'} a lição ${lesson.title}`,
+            text: best ? 'Praticar de novo' : 'Começar',
+            onclick: () => startLesson(lesson)
+          })
+        );
+      })
+    );
+  }
+
+  function buildQuestions(lesson) {
+    const lessonSigns = lesson.signIds.map(signById).filter(Boolean);
+    return shuffle(lessonSigns).map((sign) => {
+      const others = shuffle(state.signs.filter((s) => s.id !== sign.id));
+      const distractors = [...others.filter((s) => s.category === sign.category), ...others.filter((s) => s.category !== sign.category)].slice(0, 3);
+      return { sign, options: shuffle([sign, ...distractors]) };
+    });
+  }
+
+  function showQuiz(show) {
+    panel.hidden = show;
+    quizEl.hidden = !show;
+  }
+
+  function backToLessons() {
+    quiz = null;
+    renderLessons();
+    showQuiz(false);
+    $('#h-apr').focus();
+  }
+
+  function startLesson(lesson) {
+    const questions = buildQuestions(lesson);
+    if (questions.length === 0) return;
+    quiz = { lesson, questions, index: 0, score: 0 };
+    showQuiz(true);
+    renderQuestion();
+  }
+
+  function renderQuestion() {
+    const question = quiz.questions[quiz.index];
+    const total = quiz.questions.length;
+
+    const legend = el('legend', { tabindex: '-1', text: `Pergunta ${quiz.index + 1} de ${total}: qual palavra combina com esta descrição?` });
+    const feedback = el('p', { class: 'feedback', role: 'status' });
+    const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Responder' });
+
+    const options = el(
+      'div',
+      { class: 'options' },
+      ...question.options.map((option) =>
+        el(
+          'label',
+          { class: 'option', dataset: { id: option.id } },
+          el('input', { type: 'radio', name: 'answer', value: option.id }),
+          el('span', { text: option.word }),
+          el('span', { class: 'mark', 'aria-hidden': 'true' })
+        )
+      )
+    );
+
+    const form = el(
+      'form',
+      { class: 'quiz-box', novalidate: true },
+      el('fieldset', {}, legend, el('p', { class: 'prompt', text: question.sign.description }), options),
+      feedback,
+      el('div', { class: 'btn-row' }, submit, el('button', { type: 'button', class: 'btn', text: 'Sair da lição', onclick: backToLessons }))
+    );
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const chosen = form.querySelector('input[name="answer"]:checked');
+      if (!chosen) {
+        feedback.textContent = 'Escolha uma opção antes de responder.';
+        return;
+      }
+      const correct = chosen.value === question.sign.id;
+      if (correct) quiz.score += 1;
+
+      form.querySelectorAll('.option').forEach((label) => {
+        label.querySelector('input').disabled = true;
+        const mark = label.querySelector('.mark');
+        if (label.dataset.id === question.sign.id) {
+          label.classList.add('correct');
+          mark.textContent = '✔ Correta';
+        } else if (label.dataset.id === chosen.value) {
+          label.classList.add('wrong');
+          mark.textContent = '✖ Sua resposta';
+        }
+      });
+      feedback.textContent = correct ? 'Correto! Muito bem.' : `Quase. A resposta certa é “${question.sign.word}”.`;
+
+      const isLast = quiz.index === total - 1;
+      const nextButton = el('button', {
+        type: 'button',
+        class: 'btn btn-primary',
+        text: isLast ? 'Ver resultado' : 'Próxima pergunta',
+        onclick: () => {
+          quiz.index += 1;
+          if (isLast) finishQuiz();
+          else renderQuestion();
+        }
+      });
+      submit.replaceWith(nextButton);
+      nextButton.focus();
+    });
+
+    quizEl.replaceChildren(
+      el('div', { class: 'quiz-head' }, el('h2', { text: quiz.lesson.title }), el('p', { class: 'muted', text: `Acertos até agora: ${quiz.score}` })),
+      form
+    );
+    legend.focus();
+  }
+
+  async function finishQuiz() {
+    const { lesson, score, questions } = quiz;
+    const total = questions.length;
+    const record = await api.saveAttempt({ lessonId: lesson.id, score, total });
+    state.attempts.unshift(record);
+    emit('progress');
+
+    const ratio = score / total;
+    const message =
+      ratio === 1
+        ? 'Perfeito! Você acertou todas.'
+        : ratio >= 0.6
+          ? 'Bom trabalho! Revise os sinais que errou e tente de novo.'
+          : 'Continue praticando. Abra o dicionário para rever os sinais desta lição.';
+
+    quizEl.replaceChildren(
+      el(
+        'div',
+        { class: 'quiz-box' },
+        el('h2', { id: 'quiz-result', tabindex: '-1', text: `Resultado: ${lesson.title}` }),
+        el('p', { class: 'result-score', text: `${score} de ${total}` }),
+        el('p', { text: message }),
+        el(
+          'div',
+          { class: 'btn-row' },
+          el('button', { type: 'button', class: 'btn btn-primary', text: 'Tentar de novo', onclick: () => startLesson(lesson) }),
+          el('button', { type: 'button', class: 'btn', text: 'Voltar às lições', onclick: backToLessons })
+        )
+      )
+    );
+    $('#quiz-result').focus();
+    announce(`Lição concluída: ${score} de ${total}.`);
+  }
+
+  on('progress', renderLessons);
+  renderLessons();
+}
+
+// ---- communicate.js ----
+
+
+
+const PHRASE_GROUPS = {
+  frequentes: 'Mais usadas',
+  essencial: 'Essenciais',
+  saude: 'Saúde e emergência',
+  cotidiano: 'Dia a dia'
+};
+
+function initCommunicate() {
+  const groups = $('#phrase-groups');
+  const dialog = $('#show-dialog');
+  const text = $('#show-text');
+  const speakButton = $('#show-speak');
+  const form = $('#custom-form');
+  const custom = $('#custom-text');
+
+  wireDialog(dialog);
+
+  const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+  speakButton.hidden = !canSpeak;
+
+  function show(message) {
+    text.textContent = message;
+    openDialog(dialog);
+  }
+
+  speakButton.addEventListener('click', () => {
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text.textContent);
+    utterance.lang = 'pt-BR';
+    speechSynthesis.speak(utterance);
+  });
+  dialog.addEventListener('close', () => {
+    if (canSpeak) speechSynthesis.cancel();
+  });
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const message = custom.value.trim();
+    if (!message) {
+      announce('Escreva uma mensagem primeiro.');
+      custom.focus();
+      return;
+    }
+    show(message);
+  });
+
+  groups.replaceChildren(
+    ...Object.entries(PHRASE_GROUPS)
+      .map(([key, title]) => {
+        const phrases = state.phrases.filter((p) => p.category === key);
+        if (!phrases.length) return null;
+        return el(
+          'section',
+          { 'aria-labelledby': `pg-${key}` },
+          el('h2', { id: `pg-${key}`, text: title }),
+          el(
+            'ul',
+            { class: 'grid phrase-grid' },
+            ...phrases.map((phrase) =>
+              el(
+                'li',
+                {},
+                el(
+                  'button',
+                  { type: 'button', class: `phrase-btn${phrase.urgent ? ' urgent' : ''}`, onclick: () => show(phrase.text) },
+                  phrase.urgent ? el('span', { class: 'phrase-tag', text: 'Urgente' }) : null,
+                  el('span', { text: phrase.text })
+                )
+              )
+            )
+          )
+        );
+      })
+      .filter(Boolean)
+  );
+}
+
+// ---- captions.js ----
+
+
+function initCaptions() {
+  const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const startButton = $('#cap-start');
+  const langSelect = $('#cap-lang');
+  const sizeRange = $('#cap-size');
+  const log = $('#cap-log');
+  const interim = $('#cap-interim');
+  const status = $('#cap-status');
+  const lines = []; // { time, text }
+
+  const setStatus = (message) => {
+    status.textContent = message;
+  };
+
+  sizeRange.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--caption-size', `${sizeRange.value}rem`);
+  });
+  document.documentElement.style.setProperty('--caption-size', `${sizeRange.value}rem`);
+
+  function addLine(textValue) {
+    const time = formatTime();
+    lines.push({ time, text: textValue });
+    log.append(el('p', { class: 'caption-line' }, el('time', { text: time }), textValue));
+    log.scrollTop = log.scrollHeight;
+  }
+
+  const allText = () => lines.map((l) => `[${l.time}] ${l.text}`).join('\n');
+
+  $('#cap-clear').addEventListener('click', () => {
+    lines.length = 0;
+    log.replaceChildren();
+    interim.textContent = '';
+    setStatus('Texto limpo.');
+  });
+
+  $('#cap-copy').addEventListener('click', async () => {
+    if (!lines.length) {
+      setStatus('Ainda não há texto para copiar.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(allText());
+      setStatus('Texto copiado.');
+    } catch {
+      const area = el('textarea', { 'aria-hidden': 'true', style: 'position:fixed;opacity:0' });
+      area.value = allText();
+      document.body.append(area);
+      area.select();
+      const ok = document.execCommand?.('copy');
+      area.remove();
+      setStatus(ok ? 'Texto copiado.' : 'Não foi possível copiar. Selecione o texto e copie manualmente.');
+    }
+  });
+
+  $('#cap-save').addEventListener('click', () => {
+    if (!lines.length) {
+      setStatus('Ainda não há texto para salvar.');
+      return;
+    }
+    const blob = new Blob([allText()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = el('a', { href: url, download: `legendas-${new Date().toISOString().slice(0, 10)}.txt` });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('Arquivo gerado.');
+  });
+
+  if (!SpeechRecognitionApi) {
+    $('#cap-unsupported').hidden = false;
+    startButton.disabled = true;
+    setStatus('Reconhecimento de voz indisponível neste navegador.');
+    return;
+  }
+
+  let recognition = null;
+  let running = false;
+  let restartTimer = null;
+
+  function stop(message = 'Legendas paradas.') {
+    running = false;
+    clearTimeout(restartTimer);
+    try {
+      recognition?.stop();
+    } catch {
+      /* já parado */
+    }
+    interim.textContent = '';
+    startButton.textContent = 'Iniciar legendas';
+    startButton.setAttribute('aria-pressed', 'false');
+    setStatus(message);
+  }
+
+  function start() {
+    recognition = new SpeechRecognitionApi();
+    recognition.lang = langSelect.value;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => setStatus('Ouvindo. Fale perto do microfone.');
+    recognition.onresult = (event) => {
+      let partial = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const piece = result[0].transcript.trim();
+        if (result.isFinal) {
+          if (piece) addLine(piece);
+        } else {
+          partial += `${piece} `;
+        }
+      }
+      interim.textContent = partial.trim();
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        stop('O acesso ao microfone foi negado. Libere a permissão nas configurações do navegador.');
+      } else if (event.error === 'network') {
+        stop('Sem conexão com o serviço de reconhecimento de voz. Verifique a internet.');
+      } else {
+        setStatus(`Erro no reconhecimento de voz (${event.error}).`);
+      }
+    };
+    recognition.onend = () => {
+      // O navegador encerra após silêncio; reinicia enquanto a pessoa quiser legendas.
+      if (!running) return;
+      restartTimer = setTimeout(() => {
+        try {
+          recognition.start();
+        } catch {
+          /* já iniciado */
+        }
+      }, 250);
+    };
+
+    running = true;
+    startButton.textContent = 'Parar legendas';
+    startButton.setAttribute('aria-pressed', 'true');
+    try {
+      recognition.start();
+    } catch {
+      stop('Não foi possível iniciar o reconhecimento de voz.');
+    }
+  }
+
+  startButton.addEventListener('click', () => (running ? stop() : start()));
+  langSelect.addEventListener('change', () => {
+    if (running) {
+      stop('Trocando o idioma…');
+      start();
+    }
+  });
+}
+
+// ---- soundalert.js ----
+
+
+let toastTimer;
+
+/** Aviso visual grande, tela piscando (suave) e vibração. */
+function fireAlert(message) {
+  const toast = $('#alert-toast');
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 7000);
+
+  const flash = $('#flash');
+  if (!prefersReducedMotion() && document.documentElement.dataset.flash !== 'off') {
+    flash.classList.remove('on');
+    void flash.offsetWidth; // reinicia a animação
+    flash.classList.add('on');
+  }
+  vibrate([300, 120, 300, 120, 300]);
+}
+
+function initSoundAlert() {
+  const startButton = $('#snd-start');
+  const testButton = $('#snd-test');
+  const range = $('#snd-threshold');
+  const rangeOut = $('#snd-threshold-out');
+  const meter = $('#snd-meter');
+  const fill = $('#snd-fill');
+  const mark = $('#snd-mark');
+  const status = $('#snd-status');
+  const history = $('#snd-history');
+  const chip = $('#alert-chip');
+
+  let stream = null;
+  let audioContext = null;
+  let analyser = null;
+  let samples = null;
+  let timer = null;
+  let lastFire = 0;
+  let lastAria = 0;
+  let eventCount = 0;
+  let threshold = Number(range.value);
+
+  const setStatus = (message) => {
+    status.textContent = message;
+  };
+
+  function syncThreshold() {
+    threshold = Number(range.value);
+    mark.style.left = `${threshold}%`;
+    rangeOut.textContent = `${threshold}%`;
+  }
+  syncThreshold();
+  range.addEventListener('input', syncThreshold);
+
+  $('#flash').addEventListener('animationend', (event) => event.currentTarget.classList.remove('on'));
+
+  function addHistory(message) {
+    if (eventCount === 0) history.replaceChildren();
+    eventCount += 1;
+    history.prepend(el('li', { text: `${formatTime()}: ${message}` }));
+    while (history.children.length > 20) history.lastChild.remove();
+  }
+
+  function sample() {
+    analyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const v = (samples[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / samples.length);
+    const db = 20 * Math.log10(Math.max(rms, 1e-5));
+    const level = Math.max(0, Math.min(100, Math.round(((db + 60) / 60) * 100))); // -60 dB = 0%, 0 dB = 100%
+    fill.style.width = `${level}%`;
+
+    const now = Date.now();
+    if (now - lastAria > 500) {
+      meter.setAttribute('aria-valuenow', String(level));
+      lastAria = now;
+    }
+    if (level >= threshold && now - lastFire > 3000) {
+      lastFire = now;
+      const message = `Som alto detectado às ${formatTime()}`;
+      fireAlert(message);
+      addHistory('som alto detectado.');
+    }
+  }
+
+  async function start() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('Este navegador não permite usar o microfone. No celular, abra o app por uma conexão segura (https).');
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (error) {
+      setStatus(
+        error?.name === 'NotAllowedError'
+          ? 'O acesso ao microfone foi negado. Libere a permissão nas configurações do navegador.'
+          : 'Não foi possível acessar o microfone.'
+      );
+      return;
+    }
+    const AudioContextApi = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioContextApi();
+    if (audioContext.state === 'suspended') await audioContext.resume();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    samples = new Uint8Array(analyser.fftSize);
+
+    timer = setInterval(sample, 100);
+    startButton.textContent = 'Desativar alerta';
+    startButton.setAttribute('aria-pressed', 'true');
+    chip.hidden = false;
+    setStatus('Alerta ativo. Mantenha esta página aberta e a tela ligada.');
+  }
+
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    audioContext?.close?.();
+    stream = null;
+    audioContext = null;
+    fill.style.width = '0%';
+    meter.setAttribute('aria-valuenow', '0');
+    startButton.textContent = 'Ativar alerta';
+    startButton.setAttribute('aria-pressed', 'false');
+    chip.hidden = true;
+    setStatus('O alerta está desligado.');
+  }
+
+  startButton.addEventListener('click', () => (timer ? stop() : start()));
+  testButton.addEventListener('click', () => {
+    fireAlert('Teste: assim será o aviso de som.');
+    addHistory('teste do aviso.');
+  });
+}
+
+// ---- progress.js ----
+
+
+
+
+
+function initProgress() {
+  const stats = $('#stats');
+  const favList = $('#fav-list');
+  const favEmpty = $('#fav-empty');
+  const rows = $('#attempt-rows');
+
+  const stat = (label, value) => el('div', { class: 'stat' }, el('dt', { text: label }), el('dd', { text: String(value) }));
+
+  function bestOf(lessonId) {
+    const tries = state.attempts.filter((a) => a.lessonId === lessonId);
+    if (!tries.length) return { best: null, count: 0 };
+    return { best: tries.reduce((b, a) => (a.score / a.total > b.score / b.total ? a : b)), count: tries.length };
+  }
+
+  function render() {
+    const summaries = state.lessons.map((lesson) => ({ lesson, ...bestOf(lesson.id) }));
+    const practiced = summaries.filter((s) => s.best);
+    const average = practiced.length ? Math.round((practiced.reduce((sum, s) => sum + s.best.score / s.best.total, 0) / practiced.length) * 100) : null;
+
+    stats.replaceChildren(
+      stat('Sinais favoritos', state.favorites.size),
+      stat('Lições praticadas', `${practiced.length} de ${state.lessons.length}`),
+      stat('Média das melhores notas', average === null ? '—' : `${average}%`),
+      stat('Tentativas', state.attempts.length)
+    );
+
+    const favorites = [...state.favorites].map(signById).filter(Boolean).sort((a, b) => a.word.localeCompare(b.word, 'pt-BR'));
+    favList.replaceChildren(...favorites.map(signCard));
+    favEmpty.hidden = favorites.length > 0;
+
+    rows.replaceChildren(
+      ...summaries.map(({ lesson, best, count }) =>
+        el('tr', {}, el('th', { scope: 'row', text: lesson.title }), el('td', { text: best ? `${best.score} de ${best.total}` : '—' }), el('td', { text: String(count) }))
+      )
+    );
+  }
+
+  on('progress', render);
+  on('favorites', render);
+  render();
+
+  // Sugestões
+  const form = $('#feedback-form');
+  const message = $('#fb-message');
+  const contact = $('#fb-contact');
+  const fbStatus = $('#fb-status');
+  const setFbStatus = (text, kind) => {
+    fbStatus.textContent = text;
+    fbStatus.className = `form-status${kind ? ` is-${kind}` : ''}`;
+  };
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const text = message.value.trim();
+    if (text.length < 3) {
+      setFbStatus('Escreva uma mensagem com pelo menos 3 letras.', 'error');
+      message.focus();
+      return;
+    }
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      await api.sendFeedback({ message: text, contact: contact.value.trim() || undefined });
+      setFbStatus('Obrigado! Sua mensagem foi enviada.', 'ok');
+      form.reset();
+    } catch {
+      setFbStatus('Não foi possível enviar agora. Verifique a conexão com o servidor e tente de novo.', 'error');
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  // Apagar dados (confirmação em dois toques, sem janelas do navegador)
+  const reset = $('#reset-data');
+  const resetStatus = $('#reset-status');
+  let armed = null;
+  reset.addEventListener('click', async () => {
+    if (!armed) {
+      reset.textContent = 'Toque de novo para confirmar';
+      armed = setTimeout(() => {
+        armed = null;
+        reset.textContent = 'Apagar meus dados';
+      }, 5000);
+      return;
+    }
+    clearTimeout(armed);
+    armed = null;
+    reset.textContent = 'Apagar meus dados';
+    const { server } = await api.deleteMyData();
+    state.favorites = new Set();
+    state.attempts = [];
+    emit('favorites', {});
+    emit('progress');
+    resetStatus.className = 'form-status is-ok';
+    resetStatus.textContent = server ? 'Seus dados foram apagados neste aparelho e no servidor.' : 'Seus dados foram apagados neste aparelho. Não foi possível apagar no servidor agora.';
+  });
+}
+
+// ---- app.js ----
+
+
+
+
+
+
+
+
+
+
+
+
+
+function updateNetStatus() {
+  const chip = $('#net-status');
+  const connected = state.source === 'server';
+  chip.textContent = connected ? 'Conectado ao servidor' : 'Modo offline (dados do aparelho)';
+  chip.classList.toggle('is-ok', connected);
+  chip.classList.toggle('is-warn', !connected);
+}
+
+async function boot() {
+  initA11y();
+
+  const catalog = await api.loadCatalog();
+  Object.assign(state, {
+    categories: catalog.categories,
+    signs: catalog.signs,
+    lessons: catalog.lessons,
+    phrases: catalog.phrases,
+    source: catalog.source
+  });
+  state.favorites = new Set(await api.loadFavorites());
+  state.attempts = await api.loadAttempts();
+  updateNetStatus();
+
+  initDictionary();
+  initAlphabet();
+  initLearn();
+  initCommunicate();
+  initCaptions();
+  initSoundAlert();
+  initProgress();
+  initRouter();
+
+  if ('serviceWorker' in navigator && window.APP_CONFIG?.PWA !== false && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+}
+
+boot();
+
+})();
+</script>
+</body>
+</html>

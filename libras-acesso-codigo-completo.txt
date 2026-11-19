@@ -1,0 +1,5250 @@
+
+
+================================================================
+// ARQUIVO: README.md
+================================================================
+# Libras Acesso
+
+Aplicativo web de acessibilidade para pessoas surdas e com deficiência auditiva.
+
+**Recursos:** dicionário de sinais com busca e favoritos, alfabeto e soletração, lições com quiz, cartões de comunicação em tela cheia, legendas ao vivo (fala para texto), alerta visual e por vibração para sons altos, painel de acessibilidade (texto até 200%, alto contraste, tema claro/escuro, menos animação, mais espaçamento) e instalação como app (PWA).
+
+**Tecnologias:** HTML5, CSS3, JavaScript ES6 (módulos), Node.js + Express, MySQL ou Supabase (Postgres), deploy no Render.
+
+## Estrutura
+
+```
+frontend/        HTML, CSS e JS do app (sem etapa de build)
+backend/
+  src/server.js  Servidor Express: API em /api e frontend estático
+  src/db/        memory.js, mysql.js e supabase.js (mesma interface)
+  sql/           mysql_schema.sql e supabase_schema.sql
+  data/          seed.json (conteúdo inicial)
+  scripts/       seed.js (carrega o banco) e build.js (gera o protótipo)
+  test/          testes automatizados da API
+prototype/       libras-acesso-prototipo.html (arquivo único, abre com duplo clique)
+render.yaml      Configuração de deploy no Render
+```
+
+## Rodar localmente
+
+```bash
+cd backend
+npm install
+cp .env.example .env     # DB_PROVIDER=memory funciona sem banco nenhum
+npm start                # http://localhost:3000
+npm test
+```
+
+O microfone (legendas e alerta de som) exige `https` ou `localhost`.
+
+## Escolher o banco de dados
+
+Defina `DB_PROVIDER` no `.env` (ou no painel do Render):
+
+| Valor | Quando usar | Variáveis |
+|---|---|---|
+| `memory` | Testes e demonstração. Dados somem ao reiniciar. | nenhuma |
+| `supabase` | Produção com Postgres gerenciado. | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` |
+| `mysql` | Produção com MySQL/MariaDB. | `DATABASE_URL` (ou `MYSQL_*`), `MYSQL_SSL` |
+
+### Supabase
+1. Crie um projeto em supabase.com.
+2. No **SQL Editor**, rode `backend/sql/supabase_schema.sql`.
+3. Em **Project Settings > API**, copie a URL e a chave `service_role` para as variáveis.
+4. `DB_PROVIDER=supabase npm run seed` carrega os sinais, lições e frases.
+
+A chave `service_role` ignora o RLS. Use apenas no servidor, nunca no frontend nem em repositório público. As tabelas de usuário têm RLS ligado e nenhuma policy, então só o servidor acessa.
+
+### MySQL
+1. Crie um banco vazio (utf8mb4).
+2. Configure `DATABASE_URL=mysql://usuario:senha@host:3306/banco`.
+3. `DB_PROVIDER=mysql npm run seed` cria as tabelas (`sql/mysql_schema.sql`) e carrega o conteúdo.
+
+## Publicar no Render
+
+1. Suba o projeto para um repositório no GitHub.
+2. No Render: **New > Blueprint** e escolha o repositório (usa o `render.yaml`).
+3. Preencha as variáveis marcadas como secretas no painel.
+4. Rode o seed uma vez (pelo seu computador, com as variáveis do banco de produção).
+5. O Render usa `/api/health` para verificar o serviço.
+
+No plano gratuito o serviço dorme após inatividade, e a primeira requisição pode demorar. O app continua funcionando com dados locais enquanto isso.
+
+## API
+
+| Método | Rota | Descrição |
+|---|---|---|
+| GET | `/api/health` | Estado do servidor e do banco |
+| GET | `/api/categories` | Categorias |
+| GET | `/api/signs?q=&category=&limit=` | Sinais (busca ignora acentos) |
+| GET | `/api/signs/:id` | Um sinal |
+| GET | `/api/lessons` | Lições |
+| GET | `/api/phrases` | Frases dos cartões |
+| GET/PUT/DELETE | `/api/users/:userId/favorites[/:signId]` | Favoritos |
+| GET/POST | `/api/users/:userId/attempts` | Pontuações de quiz |
+| DELETE | `/api/users/:userId` | Apaga os dados do usuário |
+| POST | `/api/feedback` | Envia sugestão |
+
+`userId` é um código anônimo (UUID) gerado no aparelho. Não há login nesta versão.
+
+## Antes de publicar de verdade
+
+- **Conteúdo de Libras:** os sinais são exemplos escritos para demonstrar o app. Substitua por vídeos e descrições revisados por intérpretes e pessoas surdas fluentes. Grave a URL em `video_url` e marque `validated = true`. No Supabase, use um bucket público do Storage.
+- **Contas de usuário:** o código anônimo não protege dados. Se quiser sincronizar entre aparelhos, adicione login (Supabase Auth) e ajuste as policies de RLS.
+- **Alerta de som:** mede só volume e não identifica o tipo de som. Não use como único aviso de segurança.
+- **Legendas ao vivo:** usam o reconhecimento de voz do navegador (Chrome/Edge), que pode enviar áudio a um serviço online.
+- **Privacidade (LGPD):** informe no app quais dados são guardados e por quê. O botão "Apagar meus dados" já remove favoritos e pontuações.
+- **Imagens do alfabeto:** coloque `A.png` a `Z.png` em uma pasta e aponte `ALPHABET_IMAGE_BASE` em `frontend/config.js`.
+
+
+================================================================
+// ARQUIVO: render.yaml
+================================================================
+# Blueprint do Render: um único serviço web serve a API (/api) e o frontend.
+# Como usar: Render > New > Blueprint > aponte para o repositório.
+services:
+  - type: web
+    name: libras-acesso
+    runtime: node
+    plan: free
+    buildCommand: cd backend && npm install --omit=dev
+    startCommand: cd backend && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: NODE_ENV
+        value: production
+      # memory | mysql | supabase
+      - key: DB_PROVIDER
+        value: supabase
+      # Preencha no painel do Render (sync: false = valor secreto, não vai para o Git)
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: MYSQL_SSL
+        value: "true"
+      # Só necessário se o frontend for hospedado em outro domínio
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+
+================================================================
+// ARQUIVO: backend/package.json
+================================================================
+{
+  "name": "libras-acesso-api",
+  "version": "1.0.0",
+  "description": "API do Libras Acesso: Express + MySQL ou Supabase, pronta para deploy no Render.",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=18.18" },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node scripts/seed.js",
+    "build": "node scripts/build.js",
+    "test": "node --test test/api.test.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^7.4.0",
+    "helmet": "^8.0.0",
+    "mysql2": "^3.11.0",
+    "zod": "^3.23.8"
+  }
+}
+
+
+================================================================
+// ARQUIVO: backend/.env.example
+================================================================
+# ---------------------------------------------------------------
+# Libras Acesso - variáveis de ambiente
+# Copie este arquivo para .env (nunca faça commit do .env)
+# ---------------------------------------------------------------
+
+PORT=3000
+NODE_ENV=development
+
+# Quem pode chamar a API pelo navegador (separe por vírgula).
+# Deixe vazio se o frontend é servido pelo próprio servidor (mesma origem).
+# Exemplo: https://meu-front.onrender.com,http://localhost:5500
+ALLOWED_ORIGINS=
+
+# Banco de dados: memory | mysql | supabase
+#  - memory   : sem banco, dados de exemplo em memória (bom para testar)
+#  - mysql    : usa DATABASE_URL (ou as variáveis MYSQL_*)
+#  - supabase : usa SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY
+DB_PROVIDER=memory
+
+# --- MySQL -------------------------------------------------------
+# Formato: mysql://usuario:senha@host:3306/nome_do_banco
+DATABASE_URL=
+# Alternativa à DATABASE_URL:
+MYSQL_HOST=
+MYSQL_PORT=3306
+MYSQL_USER=
+MYSQL_PASSWORD=
+MYSQL_DATABASE=
+# Use true se o provedor exige conexão segura (TLS)
+MYSQL_SSL=false
+
+# --- Supabase ----------------------------------------------------
+# Painel do Supabase > Project Settings > API
+SUPABASE_URL=
+# ATENÇÃO: a service_role ignora as regras de RLS. Use SOMENTE no servidor,
+# nunca no frontend e nunca em repositório público.
+SUPABASE_SERVICE_ROLE_KEY=
+
+
+================================================================
+// ARQUIVO: backend/sql/mysql_schema.sql
+================================================================
+-- Libras Acesso - esquema MySQL 8 / MariaDB 10.5+
+-- Idempotente: pode ser executado mais de uma vez.
+-- utf8mb4_unicode_ci ignora acentos e maiúsculas nas comparações.
+
+CREATE TABLE IF NOT EXISTS categories (
+  id          VARCHAR(40)  NOT NULL,
+  name        VARCHAR(80)  NOT NULL,
+  icon        VARCHAR(16)  NULL,
+  sort_order  INT          NOT NULL DEFAULT 0,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS signs (
+  id           VARCHAR(60)  NOT NULL,
+  word         VARCHAR(120) NOT NULL,
+  category_id  VARCHAR(40)  NOT NULL,
+  emoji        VARCHAR(16)  NULL,
+  description  TEXT         NOT NULL,
+  tip          TEXT         NULL,
+  video_url    VARCHAR(500) NULL,
+  image_url    VARCHAR(500) NULL,
+  validated    TINYINT(1)   NOT NULL DEFAULT 0,
+  search_text  TEXT         NOT NULL,
+  created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_signs_category (category_id),
+  KEY idx_signs_word (word),
+  CONSTRAINT fk_signs_category FOREIGN KEY (category_id) REFERENCES categories (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lessons (
+  id          VARCHAR(60)  NOT NULL,
+  title       VARCHAR(120) NOT NULL,
+  description TEXT         NULL,
+  sort_order  INT          NOT NULL DEFAULT 0,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS lesson_signs (
+  lesson_id VARCHAR(60) NOT NULL,
+  sign_id   VARCHAR(60) NOT NULL,
+  position  INT         NOT NULL DEFAULT 0,
+  PRIMARY KEY (lesson_id, sign_id),
+  CONSTRAINT fk_ls_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id) ON DELETE CASCADE,
+  CONSTRAINT fk_ls_sign   FOREIGN KEY (sign_id)   REFERENCES signs (id)   ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS phrases (
+  id          VARCHAR(60)  NOT NULL,
+  text        VARCHAR(300) NOT NULL,
+  category    VARCHAR(40)  NOT NULL,
+  urgent      TINYINT(1)   NOT NULL DEFAULT 0,
+  sort_order  INT          NOT NULL DEFAULT 0,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- user_id é um identificador anônimo gerado no aparelho (UUID).
+-- Para contas reais, troque por um id de usuário autenticado.
+CREATE TABLE IF NOT EXISTS favorites (
+  user_id    VARCHAR(64) NOT NULL,
+  sign_id    VARCHAR(60) NOT NULL,
+  created_at TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (user_id, sign_id),
+  CONSTRAINT fk_fav_sign FOREIGN KEY (sign_id) REFERENCES signs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS attempts (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id    VARCHAR(64)  NOT NULL,
+  lesson_id  VARCHAR(60)  NOT NULL,
+  score      INT          NOT NULL,
+  total      INT          NOT NULL,
+  created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY idx_attempts_user (user_id, id),
+  CONSTRAINT fk_att_lesson FOREIGN KEY (lesson_id) REFERENCES lessons (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id    VARCHAR(64)  NULL,
+  message    TEXT         NOT NULL,
+  contact    VARCHAR(200) NULL,
+  created_at TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
+================================================================
+// ARQUIVO: backend/sql/supabase_schema.sql
+================================================================
+-- Libras Acesso - esquema para Supabase (Postgres)
+-- Cole no SQL Editor do painel do Supabase e execute. É idempotente.
+
+create table if not exists public.categories (
+  id         text primary key,
+  name       text not null,
+  icon       text,
+  sort_order int  not null default 0
+);
+
+create table if not exists public.signs (
+  id          text primary key,
+  word        text not null,
+  category_id text not null references public.categories (id),
+  emoji       text,
+  description text not null,
+  tip         text,
+  video_url   text,
+  image_url   text,
+  validated   boolean not null default false,
+  search_text text not null default '',
+  created_at  timestamptz not null default now()
+);
+create index if not exists idx_signs_category on public.signs (category_id);
+create index if not exists idx_signs_word on public.signs (word);
+
+create table if not exists public.lessons (
+  id          text primary key,
+  title       text not null,
+  description text,
+  sort_order  int  not null default 0
+);
+
+create table if not exists public.lesson_signs (
+  lesson_id text not null references public.lessons (id) on delete cascade,
+  sign_id   text not null references public.signs (id)   on delete cascade,
+  position  int  not null default 0,
+  primary key (lesson_id, sign_id)
+);
+
+create table if not exists public.phrases (
+  id         text primary key,
+  text       text not null,
+  category   text not null,
+  urgent     boolean not null default false,
+  sort_order int not null default 0
+);
+
+-- Dados de usuário (identificador anônimo gerado no aparelho)
+create table if not exists public.favorites (
+  user_id    text not null,
+  sign_id    text not null references public.signs (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, sign_id)
+);
+
+create table if not exists public.attempts (
+  id         bigint generated always as identity primary key,
+  user_id    text not null,
+  lesson_id  text not null references public.lessons (id) on delete cascade,
+  score      int  not null,
+  total      int  not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_attempts_user on public.attempts (user_id, id desc);
+
+create table if not exists public.feedback (
+  id         bigint generated always as identity primary key,
+  user_id    text,
+  message    text not null,
+  contact    text,
+  created_at timestamptz not null default now()
+);
+
+-- ---------------------------------------------------------------
+-- Segurança (RLS)
+-- Catálogo: leitura pública. Dados de usuário: nenhuma policy,
+-- ou seja, só a service_role (servidor) consegue ler e gravar.
+-- ---------------------------------------------------------------
+alter table public.categories   enable row level security;
+alter table public.signs        enable row level security;
+alter table public.lessons      enable row level security;
+alter table public.lesson_signs enable row level security;
+alter table public.phrases      enable row level security;
+alter table public.favorites    enable row level security;
+alter table public.attempts     enable row level security;
+alter table public.feedback     enable row level security;
+
+drop policy if exists "catalogo publico" on public.categories;
+drop policy if exists "catalogo publico" on public.signs;
+drop policy if exists "catalogo publico" on public.lessons;
+drop policy if exists "catalogo publico" on public.lesson_signs;
+drop policy if exists "catalogo publico" on public.phrases;
+
+create policy "catalogo publico" on public.categories   for select using (true);
+create policy "catalogo publico" on public.signs        for select using (true);
+create policy "catalogo publico" on public.lessons      for select using (true);
+create policy "catalogo publico" on public.lesson_signs for select using (true);
+create policy "catalogo publico" on public.phrases      for select using (true);
+
+-- ---------------------------------------------------------------
+-- Vídeos dos sinais (opcional): crie um bucket público no Storage
+-- chamado "sign-videos", envie os arquivos e grave a URL pública em
+-- signs.video_url. Exemplo:
+--   update public.signs set video_url = 'https://SEU-PROJETO.supabase.co/storage/v1/object/public/sign-videos/obrigado.mp4',
+--                           validated = true
+--   where id = 'obrigado';
+-- ---------------------------------------------------------------
+
+
+================================================================
+// ARQUIVO: backend/data/seed.js
+================================================================
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+
+/** Remove acentos e deixa em minúsculas, para busca que ignora acentuação. */
+export function normalize(text) {
+  return String(text ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+/** Lê o seed.json e calcula o campo de busca de cada sinal. */
+export function loadSeed() {
+  const raw = JSON.parse(readFileSync(path.join(here, 'seed.json'), 'utf8'));
+  const categoryName = new Map(raw.categories.map((c) => [c.id, c.name]));
+  const signs = raw.signs.map((s) => ({
+    ...s,
+    searchText: normalize(`${s.word} ${s.description} ${categoryName.get(s.category) ?? ''}`)
+  }));
+  return { ...raw, signs };
+}
+
+
+================================================================
+// ARQUIVO: backend/data/seed.json
+================================================================
+{
+  "categories": [
+    {
+      "id": "saudacoes",
+      "name": "Saudações",
+      "icon": "👋",
+      "sortOrder": 1
+    },
+    {
+      "id": "basico",
+      "name": "Básico",
+      "icon": "💬",
+      "sortOrder": 2
+    },
+    {
+      "id": "saude",
+      "name": "Saúde e emergência",
+      "icon": "🚑",
+      "sortOrder": 3
+    },
+    {
+      "id": "casa",
+      "name": "Casa e família",
+      "icon": "🏠",
+      "sortOrder": 4
+    },
+    {
+      "id": "alimentos",
+      "name": "Comida e bebida",
+      "icon": "🍽️",
+      "sortOrder": 5
+    }
+  ],
+  "signs": [
+    {
+      "id": "oi",
+      "word": "Oi / Olá",
+      "category": "saudacoes",
+      "emoji": "👋",
+      "description": "Mão aberta perto da lateral da cabeça, com um pequeno aceno para fora.",
+      "tip": "Acompanhe com expressão facial amigável e contato visual.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "bom-dia",
+      "word": "Bom dia",
+      "category": "saudacoes",
+      "emoji": "🌅",
+      "description": "Sinal composto: BOM seguido de DIA.",
+      "tip": "Em Libras, a expressão facial faz parte do sinal.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "boa-tarde",
+      "word": "Boa tarde",
+      "category": "saudacoes",
+      "emoji": "🌇",
+      "description": "Sinal composto: BOM seguido de TARDE.",
+      "tip": "Mantenha o mesmo ritmo e expressão do cumprimento anterior.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "boa-noite",
+      "word": "Boa noite",
+      "category": "saudacoes",
+      "emoji": "🌙",
+      "description": "Sinal composto: BOM seguido de NOITE.",
+      "tip": "Serve para cumprimentar e para se despedir à noite.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "tchau",
+      "word": "Tchau",
+      "category": "saudacoes",
+      "emoji": "🙋",
+      "description": "Mão aberta com movimento de aceno de despedida.",
+      "tip": "O aceno é visível de longe, bom para chamar atenção.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "obrigado",
+      "word": "Obrigado(a)",
+      "category": "basico",
+      "emoji": "🙏",
+      "description": "Mão aberta toca perto do queixo e se afasta para frente.",
+      "tip": "O mesmo sinal vale para obrigado e obrigada.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "por-favor",
+      "word": "Por favor",
+      "category": "basico",
+      "emoji": "🤲",
+      "description": "Mão aberta sobre o peito, com movimento circular.",
+      "tip": "Use expressão gentil, ela muda o tom do pedido.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "desculpa",
+      "word": "Desculpa",
+      "category": "basico",
+      "emoji": "😔",
+      "description": "Movimento junto ao peito que expressa pedido de desculpas.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "sim",
+      "word": "Sim",
+      "category": "basico",
+      "emoji": "✅",
+      "description": "Mão fechada balança para baixo e para cima, como um aceno de cabeça.",
+      "tip": "Acompanhe com um aceno de cabeça.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "nao",
+      "word": "Não",
+      "category": "basico",
+      "emoji": "❌",
+      "description": "Dedo indicador balança de um lado para o outro.",
+      "tip": "Acompanhe com um aceno de cabeça negativo.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "amigo",
+      "word": "Amigo(a)",
+      "category": "basico",
+      "emoji": "🤝",
+      "description": "As duas mãos se encontram à frente do corpo, indicando união.",
+      "tip": "Confirme a forma exata das mãos com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "onde",
+      "word": "Onde?",
+      "category": "basico",
+      "emoji": "❓",
+      "description": "Sinal de pergunta feito com a mão, acompanhado de expressão interrogativa.",
+      "tip": "Perguntas em Libras usam sobrancelhas franzidas e cabeça levemente inclinada.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "banheiro",
+      "word": "Banheiro",
+      "category": "basico",
+      "emoji": "🚻",
+      "description": "Sinal próprio para BANHEIRO, feito perto do corpo.",
+      "tip": "Adicione o vídeo do sinal validado para este item.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "ajuda",
+      "word": "Ajuda",
+      "category": "saude",
+      "emoji": "🆘",
+      "description": "Uma mão apoia a outra por baixo e ambas se movem para cima.",
+      "tip": "Em emergência, combine com expressão de urgência.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "medico",
+      "word": "Médico(a)",
+      "category": "saude",
+      "emoji": "🩺",
+      "description": "Dedos tocam o pulso, lembrando a verificação do pulso.",
+      "tip": "Vale para médico e médica.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "hospital",
+      "word": "Hospital",
+      "category": "saude",
+      "emoji": "🏥",
+      "description": "Sinal que remete a MÉDICO e a um local de atendimento.",
+      "tip": "Adicione o vídeo validado para mostrar a forma correta.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "emergencia",
+      "word": "Emergência",
+      "category": "saude",
+      "emoji": "🚨",
+      "description": "Sinal rápido e enfático, com expressão de urgência.",
+      "tip": "No Brasil: SAMU 192, Bombeiros 193, Polícia 190.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "dor",
+      "word": "Dor",
+      "category": "saude",
+      "emoji": "🤕",
+      "description": "Dedos indicadores se movem em direções opostas perto do local da dor.",
+      "tip": "Aponte o local do corpo onde dói.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "casa",
+      "word": "Casa",
+      "category": "casa",
+      "emoji": "🏠",
+      "description": "As duas mãos formam o telhado de uma casa.",
+      "tip": "O desenho do telhado ajuda a memorizar o sinal.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "familia",
+      "word": "Família",
+      "category": "casa",
+      "emoji": "👨‍👩‍👧",
+      "description": "Mãos desenham um círculo à frente do corpo, indicando um grupo unido.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "bebe",
+      "word": "Bebê",
+      "category": "casa",
+      "emoji": "👶",
+      "description": "Os braços embalam um bebê imaginário.",
+      "tip": "Sinal icônico: imita o gesto de embalar.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "agua",
+      "word": "Água",
+      "category": "alimentos",
+      "emoji": "💧",
+      "description": "Movimento junto à boca que remete a água.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "comer",
+      "word": "Comer",
+      "category": "alimentos",
+      "emoji": "🍽️",
+      "description": "Dedos juntos são levados à boca repetidamente.",
+      "tip": "Também pode significar comida, dependendo do contexto.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "beber",
+      "word": "Beber",
+      "category": "alimentos",
+      "emoji": "🥤",
+      "description": "A mão em formato de copo é levada à boca e inclina como se bebesse.",
+      "tip": "Sinal icônico: imita o gesto de beber.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "cafe",
+      "word": "Café",
+      "category": "alimentos",
+      "emoji": "☕",
+      "description": "Uma mão fechada gira ao lado da outra, como moer café.",
+      "tip": "O movimento imita um moedor manual.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    }
+  ],
+  "lessons": [
+    {
+      "id": "licao-saudacoes",
+      "title": "Saudações",
+      "description": "Cumprimentos para começar e encerrar uma conversa.",
+      "sortOrder": 1,
+      "signIds": [
+        "oi",
+        "bom-dia",
+        "boa-tarde",
+        "boa-noite",
+        "tchau"
+      ]
+    },
+    {
+      "id": "licao-basico",
+      "title": "Educação e respostas",
+      "description": "Agradecer, pedir desculpas e responder sim ou não.",
+      "sortOrder": 2,
+      "signIds": [
+        "obrigado",
+        "por-favor",
+        "desculpa",
+        "sim",
+        "nao"
+      ]
+    },
+    {
+      "id": "licao-saude",
+      "title": "Saúde e emergência",
+      "description": "Sinais para pedir ajuda e falar de saúde.",
+      "sortOrder": 3,
+      "signIds": [
+        "ajuda",
+        "medico",
+        "hospital",
+        "emergencia",
+        "dor"
+      ]
+    },
+    {
+      "id": "licao-casa",
+      "title": "Casa e família",
+      "description": "Pessoas e lugares do dia a dia.",
+      "sortOrder": 4,
+      "signIds": [
+        "casa",
+        "familia",
+        "bebe",
+        "amigo"
+      ]
+    },
+    {
+      "id": "licao-alimentos",
+      "title": "Comida e bebida",
+      "description": "Pedir e falar sobre alimentos e bebidas.",
+      "sortOrder": 5,
+      "signIds": [
+        "agua",
+        "comer",
+        "beber",
+        "cafe"
+      ]
+    }
+  ],
+  "phrases": [
+    {
+      "id": "f-ola",
+      "text": "Olá! Tudo bem?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-bomdia",
+      "text": "Bom dia! Boa tarde! Boa noite!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-nome",
+      "text": "Meu nome é…",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-prazer",
+      "text": "Prazer em conhecer!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-licenca",
+      "text": "Com licença.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-desculpa",
+      "text": "Desculpa.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-repetir",
+      "text": "Pode repetir, por favor?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-devagar",
+      "text": "Mais devagar, por favor.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-entendi",
+      "text": "Entendi.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-nao-entendi",
+      "text": "Não entendi.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-espera",
+      "text": "Espera um pouco.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-onde",
+      "text": "Fica onde? É perto?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-custa",
+      "text": "Quanto custa?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-ajuda",
+      "text": "Preciso de ajuda.",
+      "category": "frequentes",
+      "urgent": true
+    },
+    {
+      "id": "f-tchau",
+      "text": "Tchau! Até mais!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "p-surdo",
+      "text": "Sou surdo(a). Por favor, escreva ou digite no celular para conversarmos.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-devagar",
+      "text": "Fale devagar e de frente para mim, por favor.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-interprete",
+      "text": "Preciso de um intérprete de Libras.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-escrever",
+      "text": "Você pode escrever, por favor?",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-repetir",
+      "text": "Não entendi. Pode repetir por escrito?",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-obrigado",
+      "text": "Muito obrigado(a)!",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-medico",
+      "text": "Preciso de atendimento médico.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-ambulancia",
+      "text": "Chame uma ambulância, por favor.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-dor",
+      "text": "Estou com dor. Preciso de ajuda.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-alergia",
+      "text": "Tenho alergia. Preciso avisar a equipe de saúde.",
+      "category": "saude",
+      "urgent": false
+    },
+    {
+      "id": "p-banheiro",
+      "text": "Onde fica o banheiro?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-preco",
+      "text": "Quanto custa? Pode digitar o valor?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-ajuda",
+      "text": "Pode me ajudar, por favor?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-saida",
+      "text": "Onde fica a saída?",
+      "category": "cotidiano",
+      "urgent": false
+    }
+  ]
+}
+
+
+================================================================
+// ARQUIVO: backend/src/server.js
+================================================================
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import path from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { createRepository } from './db/index.js';
+import { buildRouter, HttpError } from './routes.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const FRONTEND_DIR = path.resolve(here, '../../frontend');
+
+export async function createApp(env = process.env) {
+  const repo = await createRepository(env);
+  const app = express();
+
+  // Atrás do proxy do Render: necessário para o rate limit enxergar o IP real.
+  app.set('trust proxy', 1);
+  app.disable('x-powered-by');
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          mediaSrc: ["'self'", 'https:'],
+          connectSrc: ["'self'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          frameAncestors: ["'self'"]
+        }
+      },
+      // O microfone é usado pelas legendas ao vivo e pelo alerta de som.
+      crossOriginEmbedderPolicy: false
+    })
+  );
+  app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'microphone=(self), geolocation=(), camera=()');
+    next();
+  });
+
+  const allowed = (env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  app.use(
+    '/api',
+    cors({
+      origin: allowed.length ? allowed : env.NODE_ENV === 'production' ? false : true,
+      methods: ['GET', 'POST', 'PUT', 'DELETE'],
+      maxAge: 600
+    })
+  );
+
+  app.use(express.json({ limit: '20kb' }));
+  app.use(
+    '/api',
+    rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false, message: { error: 'Muitas requisições. Aguarde um instante.' } })
+  );
+
+  app.use('/api', buildRouter(repo));
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
+
+  // Frontend estático (mesmo serviço no Render)
+  if (existsSync(FRONTEND_DIR)) {
+    app.use(express.static(FRONTEND_DIR, { extensions: ['html'], maxAge: env.NODE_ENV === 'production' ? '1h' : 0 }));
+  }
+
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, _req, res, _next) => {
+    if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'JSON inválido.' });
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, details: err.details });
+    console.error(err);
+    res.status(500).json({ error: 'Erro interno do servidor.' });
+  });
+
+  return { app, repo };
+}
+
+// Só inicia o servidor quando o arquivo é executado diretamente (não nos testes).
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const port = Number(process.env.PORT || 3000);
+  const { app, repo } = await createApp();
+  app.listen(port, () => {
+    console.log(`Libras Acesso rodando em http://localhost:${port} (banco: ${repo.provider})`);
+  });
+}
+
+
+================================================================
+// ARQUIVO: backend/src/routes.js
+================================================================
+import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { z } from 'zod';
+
+const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// Identificadores: letras, números e hífen (UUID, slugs dos sinais etc.)
+const userIdSchema = z.string().regex(/^[a-zA-Z0-9-]{8,64}$/, 'Identificador de usuário inválido.');
+const slugSchema = z.string().regex(/^[a-z0-9-]{1,60}$/, 'Identificador inválido.');
+
+const attemptSchema = z
+  .object({
+    lessonId: slugSchema,
+    score: z.number().int().min(0).max(100),
+    total: z.number().int().min(1).max(100)
+  })
+  .refine((a) => a.score <= a.total, { message: 'A pontuação não pode ser maior que o total.' });
+
+const feedbackSchema = z.object({
+  userId: userIdSchema.optional(),
+  message: z.string().trim().min(3, 'Escreva uma mensagem.').max(1000, 'Mensagem muito longa (máx. 1000 caracteres).'),
+  contact: z.string().trim().max(200).optional()
+});
+
+const signsQuerySchema = z.object({
+  q: z.string().trim().max(80).optional(),
+  category: slugSchema.optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional()
+});
+
+class HttpError extends Error {
+  constructor(status, message, details) {
+    super(message);
+    this.status = status;
+    this.details = details;
+  }
+}
+
+function parse(schema, value) {
+  const result = schema.safeParse(value);
+  if (!result.success) {
+    const details = result.error.issues.map((i) => i.message);
+    throw new HttpError(400, details[0] ?? 'Dados inválidos.', details);
+  }
+  return result.data;
+}
+
+export function buildRouter(repo) {
+  const router = Router();
+
+  const feedbackLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Muitos envios. Tente novamente mais tarde.' }
+  });
+
+  router.get(
+    '/health',
+    asyncHandler(async (_req, res) => {
+      let database = 'ok';
+      try {
+        await repo.ping();
+      } catch {
+        database = 'erro';
+      }
+      res.status(database === 'ok' ? 200 : 503).json({ status: database === 'ok' ? 'ok' : 'degradado', provider: repo.provider, database });
+    })
+  );
+
+  router.get('/categories', asyncHandler(async (_req, res) => res.json(await repo.listCategories())));
+
+  router.get(
+    '/signs',
+    asyncHandler(async (req, res) => {
+      const query = parse(signsQuerySchema, req.query);
+      res.json(await repo.listSigns(query));
+    })
+  );
+
+  router.get(
+    '/signs/:id',
+    asyncHandler(async (req, res) => {
+      const id = parse(slugSchema, req.params.id);
+      const sign = await repo.getSign(id);
+      if (!sign) throw new HttpError(404, 'Sinal não encontrado.');
+      res.json(sign);
+    })
+  );
+
+  router.get('/lessons', asyncHandler(async (_req, res) => res.json(await repo.listLessons())));
+  router.get('/phrases', asyncHandler(async (_req, res) => res.json(await repo.listPhrases())));
+
+  // --- Dados do usuário (identificador anônimo) -----------------
+  router.get(
+    '/users/:userId/favorites',
+    asyncHandler(async (req, res) => {
+      const userId = parse(userIdSchema, req.params.userId);
+      res.json(await repo.listFavorites(userId));
+    })
+  );
+
+  router.put(
+    '/users/:userId/favorites/:signId',
+    asyncHandler(async (req, res) => {
+      const userId = parse(userIdSchema, req.params.userId);
+      const signId = parse(slugSchema, req.params.signId);
+      if (!(await repo.getSign(signId))) throw new HttpError(404, 'Sinal não encontrado.');
+      await repo.addFavorite(userId, signId);
+      res.status(204).end();
+    })
+  );
+
+  router.delete(
+    '/users/:userId/favorites/:signId',
+    asyncHandler(async (req, res) => {
+      const userId = parse(userIdSchema, req.params.userId);
+      const signId = parse(slugSchema, req.params.signId);
+      await repo.removeFavorite(userId, signId);
+      res.status(204).end();
+    })
+  );
+
+  router.get(
+    '/users/:userId/attempts',
+    asyncHandler(async (req, res) => {
+      const userId = parse(userIdSchema, req.params.userId);
+      res.json(await repo.listAttempts(userId));
+    })
+  );
+
+  router.post(
+    '/users/:userId/attempts',
+    asyncHandler(async (req, res) => {
+      const userId = parse(userIdSchema, req.params.userId);
+      const attempt = parse(attemptSchema, req.body);
+      const lessons = await repo.listLessons();
+      if (!lessons.some((l) => l.id === attempt.lessonId)) throw new HttpError(404, 'Lição não encontrada.');
+      await repo.saveAttempt(userId, attempt);
+      res.status(201).json({ ok: true });
+    })
+  );
+
+  // Direito de exclusão (LGPD): apaga favoritos e pontuações do código anônimo.
+  router.delete(
+    '/users/:userId',
+    asyncHandler(async (req, res) => {
+      const userId = parse(userIdSchema, req.params.userId);
+      await repo.deleteUserData(userId);
+      res.status(204).end();
+    })
+  );
+
+  router.post(
+    '/feedback',
+    feedbackLimiter,
+    asyncHandler(async (req, res) => {
+      const data = parse(feedbackSchema, req.body);
+      await repo.addFeedback(data);
+      res.status(201).json({ ok: true });
+    })
+  );
+
+  return router;
+}
+
+export { HttpError };
+
+
+================================================================
+// ARQUIVO: backend/src/db/index.js
+================================================================
+/**
+ * Escolhe o repositório de dados conforme DB_PROVIDER.
+ * Todos os repositórios expõem a mesma interface assíncrona:
+ *
+ *   ping(), listCategories(), listSigns({ q, category, limit }), getSign(id),
+ *   listLessons(), listPhrases(),
+ *   listFavorites(userId), addFavorite(userId, signId), removeFavorite(userId, signId),
+ *   listAttempts(userId), saveAttempt(userId, { lessonId, score, total }),
+ *   addFeedback({ userId, message, contact }), seed(data)
+ */
+export async function createRepository(env = process.env) {
+  const provider = (env.DB_PROVIDER || 'memory').toLowerCase();
+
+  switch (provider) {
+    case 'memory': {
+      const { MemoryRepository } = await import('./memory.js');
+      return new MemoryRepository();
+    }
+    case 'mysql': {
+      const { MySqlRepository } = await import('./mysql.js');
+      return new MySqlRepository(env);
+    }
+    case 'supabase': {
+      const { SupabaseRepository } = await import('./supabase.js');
+      return new SupabaseRepository(env);
+    }
+    default:
+      throw new Error(`DB_PROVIDER inválido: "${provider}". Use memory, mysql ou supabase.`);
+  }
+}
+
+
+================================================================
+// ARQUIVO: backend/src/db/memory.js
+================================================================
+import { loadSeed, normalize } from '../../data/seed.js';
+
+const publicSign = ({ searchText, ...sign }) => sign;
+
+/** Repositório em memória: ótimo para desenvolvimento e testes. Os dados somem ao reiniciar. */
+export class MemoryRepository {
+  provider = 'memory';
+
+  constructor() {
+    this.data = loadSeed();
+    this.favorites = new Map(); // userId -> Set(signId)
+    this.attempts = []; // { userId, lessonId, score, total, createdAt }
+    this.feedback = [];
+  }
+
+  async ping() {
+    return true;
+  }
+
+  async listCategories() {
+    return [...this.data.categories].sort((a, b) => a.sortOrder - b.sortOrder).map(({ sortOrder, ...c }) => c);
+  }
+
+  async listSigns({ q, category, limit = 200 } = {}) {
+    const term = normalize(q);
+    return this.data.signs
+      .filter((s) => (!category || s.category === category) && (!term || s.searchText.includes(term)))
+      .sort((a, b) => a.word.localeCompare(b.word, 'pt-BR'))
+      .slice(0, limit)
+      .map(publicSign);
+  }
+
+  async getSign(id) {
+    const sign = this.data.signs.find((s) => s.id === id);
+    return sign ? publicSign(sign) : null;
+  }
+
+  async listLessons() {
+    return [...this.data.lessons].sort((a, b) => a.sortOrder - b.sortOrder).map(({ sortOrder, ...l }) => l);
+  }
+
+  async listPhrases() {
+    return this.data.phrases;
+  }
+
+  async listFavorites(userId) {
+    return [...(this.favorites.get(userId) ?? [])];
+  }
+
+  async addFavorite(userId, signId) {
+    if (!this.favorites.has(userId)) this.favorites.set(userId, new Set());
+    this.favorites.get(userId).add(signId);
+  }
+
+  async removeFavorite(userId, signId) {
+    this.favorites.get(userId)?.delete(signId);
+  }
+
+  async listAttempts(userId) {
+    return this.attempts
+      .filter((a) => a.userId === userId)
+      .slice(-100)
+      .reverse()
+      .map(({ userId: _u, ...a }) => a);
+  }
+
+  async saveAttempt(userId, { lessonId, score, total }) {
+    this.attempts.push({ userId, lessonId, score, total, createdAt: new Date().toISOString() });
+  }
+
+  async deleteUserData(userId) {
+    this.favorites.delete(userId);
+    this.attempts = this.attempts.filter((a) => a.userId !== userId);
+  }
+
+  async addFeedback({ userId, message, contact }) {
+    this.feedback.push({ userId, message, contact, createdAt: new Date().toISOString() });
+  }
+
+  async seed() {
+    this.data = loadSeed();
+  }
+}
+
+
+================================================================
+// ARQUIVO: backend/src/db/mysql.js
+================================================================
+import mysql from 'mysql2/promise';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { normalize } from '../../data/seed.js';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const SCHEMA_FILE = path.join(here, '../../sql/mysql_schema.sql');
+
+const escapeLike = (text) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+function buildConfig(env) {
+  const url = env.DATABASE_URL || env.MYSQL_URL;
+  let cfg;
+  if (url) {
+    const u = new URL(url);
+    cfg = {
+      host: u.hostname,
+      port: Number(u.port || 3306),
+      user: decodeURIComponent(u.username),
+      password: decodeURIComponent(u.password),
+      database: decodeURIComponent(u.pathname.slice(1))
+    };
+  } else {
+    cfg = {
+      host: env.MYSQL_HOST,
+      port: Number(env.MYSQL_PORT || 3306),
+      user: env.MYSQL_USER,
+      password: env.MYSQL_PASSWORD,
+      database: env.MYSQL_DATABASE
+    };
+  }
+  if (!cfg.host || !cfg.user || !cfg.database) {
+    throw new Error('MySQL não configurado: defina DATABASE_URL ou MYSQL_HOST/MYSQL_USER/MYSQL_DATABASE.');
+  }
+  return {
+    ...cfg,
+    charset: 'utf8mb4',
+    ...(String(env.MYSQL_SSL).toLowerCase() === 'true' ? { ssl: { rejectUnauthorized: true } } : {})
+  };
+}
+
+const SIGN_COLUMNS = `id, word, category_id AS category, emoji, description, tip,
+  video_url AS videoUrl, image_url AS imageUrl, validated`;
+
+const toSign = (row) => ({ ...row, validated: Boolean(row.validated) });
+
+export class MySqlRepository {
+  provider = 'mysql';
+
+  constructor(env) {
+    this.config = buildConfig(env);
+    this.pool = mysql.createPool({
+      ...this.config,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+  }
+
+  async ping() {
+    await this.pool.query('SELECT 1');
+    return true;
+  }
+
+  /** Cria as tabelas (idempotente). Usado pelo script de seed. */
+  async migrate() {
+    const sql = await readFile(SCHEMA_FILE, 'utf8');
+    const conn = await mysql.createConnection({ ...this.config, multipleStatements: true });
+    try {
+      await conn.query(sql);
+    } finally {
+      await conn.end();
+    }
+  }
+
+  async listCategories() {
+    const [rows] = await this.pool.query('SELECT id, name, icon FROM categories ORDER BY sort_order');
+    return rows;
+  }
+
+  async listSigns({ q, category, limit = 200 } = {}) {
+    const where = [];
+    const params = [];
+    if (category) {
+      where.push('category_id = ?');
+      params.push(category);
+    }
+    const term = normalize(q);
+    if (term) {
+      where.push('search_text LIKE ?');
+      params.push(`%${escapeLike(term)}%`);
+    }
+    const sql = `SELECT ${SIGN_COLUMNS} FROM signs ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+                 ORDER BY word LIMIT ?`;
+    const [rows] = await this.pool.query(sql, [...params, Number(limit)]);
+    return rows.map(toSign);
+  }
+
+  async getSign(id) {
+    const [rows] = await this.pool.query(`SELECT ${SIGN_COLUMNS} FROM signs WHERE id = ? LIMIT 1`, [id]);
+    return rows[0] ? toSign(rows[0]) : null;
+  }
+
+  async listLessons() {
+    const [lessons] = await this.pool.query('SELECT id, title, description FROM lessons ORDER BY sort_order');
+    const [links] = await this.pool.query('SELECT lesson_id, sign_id FROM lesson_signs ORDER BY lesson_id, position');
+    const byLesson = new Map();
+    for (const { lesson_id, sign_id } of links) {
+      if (!byLesson.has(lesson_id)) byLesson.set(lesson_id, []);
+      byLesson.get(lesson_id).push(sign_id);
+    }
+    return lessons.map((l) => ({ ...l, signIds: byLesson.get(l.id) ?? [] }));
+  }
+
+  async listPhrases() {
+    const [rows] = await this.pool.query('SELECT id, text, category, urgent FROM phrases ORDER BY sort_order');
+    return rows.map((r) => ({ ...r, urgent: Boolean(r.urgent) }));
+  }
+
+  async listFavorites(userId) {
+    const [rows] = await this.pool.query('SELECT sign_id FROM favorites WHERE user_id = ? ORDER BY created_at', [userId]);
+    return rows.map((r) => r.sign_id);
+  }
+
+  async addFavorite(userId, signId) {
+    await this.pool.query('INSERT IGNORE INTO favorites (user_id, sign_id) VALUES (?, ?)', [userId, signId]);
+  }
+
+  async removeFavorite(userId, signId) {
+    await this.pool.query('DELETE FROM favorites WHERE user_id = ? AND sign_id = ?', [userId, signId]);
+  }
+
+  async listAttempts(userId) {
+    const [rows] = await this.pool.query(
+      `SELECT lesson_id AS lessonId, score, total, created_at AS createdAt
+       FROM attempts WHERE user_id = ? ORDER BY id DESC LIMIT 100`,
+      [userId]
+    );
+    return rows.map((r) => ({ ...r, createdAt: new Date(r.createdAt).toISOString() }));
+  }
+
+  async saveAttempt(userId, { lessonId, score, total }) {
+    await this.pool.query('INSERT INTO attempts (user_id, lesson_id, score, total) VALUES (?, ?, ?, ?)', [
+      userId,
+      lessonId,
+      score,
+      total
+    ]);
+  }
+
+  async deleteUserData(userId) {
+    await this.pool.query('DELETE FROM favorites WHERE user_id = ?', [userId]);
+    await this.pool.query('DELETE FROM attempts WHERE user_id = ?', [userId]);
+  }
+
+  async addFeedback({ userId, message, contact }) {
+    await this.pool.query('INSERT INTO feedback (user_id, message, contact) VALUES (?, ?, ?)', [
+      userId ?? null,
+      message,
+      contact ?? null
+    ]);
+  }
+
+  /** Carrega o conteúdo inicial (categorias, sinais, lições e frases). */
+  async seed(data) {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      await conn.query(
+        `INSERT INTO categories (id, name, icon, sort_order) VALUES ?
+         ON DUPLICATE KEY UPDATE name = VALUES(name), icon = VALUES(icon), sort_order = VALUES(sort_order)`,
+        [data.categories.map((c) => [c.id, c.name, c.icon, c.sortOrder])]
+      );
+
+      await conn.query(
+        `INSERT INTO signs (id, word, category_id, emoji, description, tip, video_url, image_url, validated, search_text) VALUES ?
+         ON DUPLICATE KEY UPDATE word = VALUES(word), category_id = VALUES(category_id), emoji = VALUES(emoji),
+           description = VALUES(description), tip = VALUES(tip), search_text = VALUES(search_text)`,
+        [data.signs.map((s) => [s.id, s.word, s.category, s.emoji, s.description, s.tip, s.videoUrl, s.imageUrl, s.validated ? 1 : 0, s.searchText])]
+      );
+
+      await conn.query(
+        `INSERT INTO lessons (id, title, description, sort_order) VALUES ?
+         ON DUPLICATE KEY UPDATE title = VALUES(title), description = VALUES(description), sort_order = VALUES(sort_order)`,
+        [data.lessons.map((l) => [l.id, l.title, l.description, l.sortOrder])]
+      );
+
+      await conn.query('DELETE FROM lesson_signs');
+      const links = data.lessons.flatMap((l) => l.signIds.map((signId, i) => [l.id, signId, i + 1]));
+      await conn.query('INSERT INTO lesson_signs (lesson_id, sign_id, position) VALUES ?', [links]);
+
+      await conn.query(
+        `INSERT INTO phrases (id, text, category, urgent, sort_order) VALUES ?
+         ON DUPLICATE KEY UPDATE text = VALUES(text), category = VALUES(category), urgent = VALUES(urgent), sort_order = VALUES(sort_order)`,
+        [data.phrases.map((p, i) => [p.id, p.text, p.category, p.urgent ? 1 : 0, i + 1])]
+      );
+
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
+}
+
+
+================================================================
+// ARQUIVO: backend/src/db/supabase.js
+================================================================
+import { createClient } from '@supabase/supabase-js';
+import { normalize } from '../../data/seed.js';
+
+const SIGN_COLUMNS = 'id, word, category_id, emoji, description, tip, video_url, image_url, validated';
+
+const toSign = (row) => ({
+  id: row.id,
+  word: row.word,
+  category: row.category_id,
+  emoji: row.emoji,
+  description: row.description,
+  tip: row.tip,
+  videoUrl: row.video_url,
+  imageUrl: row.image_url,
+  validated: Boolean(row.validated)
+});
+
+/** Remove caracteres com significado especial em filtros do PostgREST e curingas do LIKE. */
+const sanitizeTerm = (text) => normalize(text).replace(/[%_*,()\\"']/g, ' ').replace(/\s+/g, ' ').trim();
+
+function check({ data, error }) {
+  if (error) throw new Error(`Supabase: ${error.message}`);
+  return data;
+}
+
+/**
+ * Repositório Supabase (Postgres). Usa a service_role key, portanto roda só no servidor.
+ * As tabelas de usuário (favorites, attempts, feedback) têm RLS ligado e nenhuma policy pública:
+ * só o servidor consegue lê-las ou gravá-las.
+ */
+export class SupabaseRepository {
+  provider = 'supabase';
+
+  constructor(env) {
+    if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Supabase não configurado: defina SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.');
+    }
+    this.db = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+  }
+
+  async ping() {
+    check(await this.db.from('categories').select('id').limit(1));
+    return true;
+  }
+
+  async listCategories() {
+    return check(await this.db.from('categories').select('id, name, icon').order('sort_order'));
+  }
+
+  async listSigns({ q, category, limit = 200 } = {}) {
+    let query = this.db.from('signs').select(SIGN_COLUMNS).order('word').limit(Number(limit));
+    if (category) query = query.eq('category_id', category);
+    const term = sanitizeTerm(q);
+    if (term) query = query.ilike('search_text', `%${term}%`);
+    return check(await query).map(toSign);
+  }
+
+  async getSign(id) {
+    const row = check(await this.db.from('signs').select(SIGN_COLUMNS).eq('id', id).maybeSingle());
+    return row ? toSign(row) : null;
+  }
+
+  async listLessons() {
+    const rows = check(
+      await this.db.from('lessons').select('id, title, description, sort_order, lesson_signs(sign_id, position)').order('sort_order')
+    );
+    return rows.map((l) => ({
+      id: l.id,
+      title: l.title,
+      description: l.description,
+      signIds: [...l.lesson_signs].sort((a, b) => a.position - b.position).map((x) => x.sign_id)
+    }));
+  }
+
+  async listPhrases() {
+    return check(await this.db.from('phrases').select('id, text, category, urgent').order('sort_order'));
+  }
+
+  async listFavorites(userId) {
+    const rows = check(await this.db.from('favorites').select('sign_id').eq('user_id', userId).order('created_at'));
+    return rows.map((r) => r.sign_id);
+  }
+
+  async addFavorite(userId, signId) {
+    check(
+      await this.db
+        .from('favorites')
+        .upsert({ user_id: userId, sign_id: signId }, { onConflict: 'user_id,sign_id', ignoreDuplicates: true })
+    );
+  }
+
+  async removeFavorite(userId, signId) {
+    check(await this.db.from('favorites').delete().eq('user_id', userId).eq('sign_id', signId));
+  }
+
+  async listAttempts(userId) {
+    const rows = check(
+      await this.db
+        .from('attempts')
+        .select('lesson_id, score, total, created_at')
+        .eq('user_id', userId)
+        .order('id', { ascending: false })
+        .limit(100)
+    );
+    return rows.map((r) => ({ lessonId: r.lesson_id, score: r.score, total: r.total, createdAt: r.created_at }));
+  }
+
+  async saveAttempt(userId, { lessonId, score, total }) {
+    check(await this.db.from('attempts').insert({ user_id: userId, lesson_id: lessonId, score, total }));
+  }
+
+  async deleteUserData(userId) {
+    check(await this.db.from('favorites').delete().eq('user_id', userId));
+    check(await this.db.from('attempts').delete().eq('user_id', userId));
+  }
+
+  async addFeedback({ userId, message, contact }) {
+    check(await this.db.from('feedback').insert({ user_id: userId ?? null, message, contact: contact ?? null }));
+  }
+
+  /** Carrega o conteúdo inicial. As tabelas precisam existir (rode sql/supabase_schema.sql antes). */
+  async seed(data) {
+    check(
+      await this.db
+        .from('categories')
+        .upsert(data.categories.map((c) => ({ id: c.id, name: c.name, icon: c.icon, sort_order: c.sortOrder })))
+    );
+
+    check(
+      await this.db.from('signs').upsert(
+        data.signs.map((s) => ({
+          id: s.id,
+          word: s.word,
+          category_id: s.category,
+          emoji: s.emoji,
+          description: s.description,
+          tip: s.tip,
+          video_url: s.videoUrl,
+          image_url: s.imageUrl,
+          validated: s.validated,
+          search_text: s.searchText
+        }))
+      )
+    );
+
+    check(
+      await this.db
+        .from('lessons')
+        .upsert(data.lessons.map((l) => ({ id: l.id, title: l.title, description: l.description, sort_order: l.sortOrder })))
+    );
+
+    check(await this.db.from('lesson_signs').delete().neq('lesson_id', ''));
+    const links = data.lessons.flatMap((l) => l.signIds.map((signId, i) => ({ lesson_id: l.id, sign_id: signId, position: i + 1 })));
+    check(await this.db.from('lesson_signs').insert(links));
+
+    check(
+      await this.db
+        .from('phrases')
+        .upsert(data.phrases.map((p, i) => ({ id: p.id, text: p.text, category: p.category, urgent: p.urgent, sort_order: i + 1 })))
+    );
+  }
+}
+
+
+================================================================
+// ARQUIVO: backend/scripts/build.js
+================================================================
+// Gera:
+//  1) frontend/js/data.js          dados de exemplo para uso offline (a partir de data/seed.json)
+//  2) prototype/libras-acesso-prototipo.html   protótipo em um único arquivo (abre com duplo clique)
+//
+// Uso: npm run build
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { loadSeed } from '../data/seed.js';
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const frontend = path.join(root, 'frontend');
+const read = (...parts) => readFileSync(path.join(frontend, ...parts), 'utf8');
+
+// 1) Dados offline -----------------------------------------------------------
+const seed = loadSeed();
+const offline = {
+  categories: seed.categories.map(({ sortOrder, ...c }) => c),
+  signs: seed.signs.map(({ searchText, ...s }) => s),
+  lessons: seed.lessons.map(({ sortOrder, ...l }) => l),
+  phrases: seed.phrases
+};
+writeFileSync(
+  path.join(frontend, 'js/data.js'),
+  `// Gerado por backend/scripts/build.js a partir de backend/data/seed.json. Não edite à mão.\nexport const OFFLINE_DATA = ${JSON.stringify(offline, null, 2)};\n`
+);
+console.log('frontend/js/data.js gerado.');
+
+// 2) Protótipo de arquivo único ---------------------------------------------
+const order = ['storage', 'ui', 'data', 'api', 'state', 'a11y', 'router', 'dictionary', 'alphabet', 'learn', 'communicate', 'captions', 'soundalert', 'progress', 'app'];
+
+const topLevelNames = new Map();
+const bundle = order
+  .map((name) => {
+    let source = read('js', `${name}.js`);
+    source = source.replace(/^import[\s\S]*?from\s+['"][^'"]+['"];?[ \t]*$/gm, '');
+    source = source.replace(/^export\s+(?=(const|let|function|async function|class)\b)/gm, '');
+    for (const match of source.matchAll(/^(?:const|let|function|async function|class)\s+([A-Za-z_$][\w$]*)/gm)) {
+      if (topLevelNames.has(match[1])) throw new Error(`Nome duplicado no bundle: "${match[1]}" (${topLevelNames.get(match[1])} e ${name}.js)`);
+      topLevelNames.set(match[1], `${name}.js`);
+    }
+    if (/^\s*(import|export)\s/m.test(source)) throw new Error(`Sobrou import/export em ${name}.js`);
+    return `// ---- ${name}.js ----\n${source}`;
+  })
+  .join('\n');
+
+const config = read('config.js').replace('PWA: true', 'PWA: false');
+const css = read('css', 'styles.css');
+const html = read('index.html');
+
+const standalone = html
+  .replace(/\s*<link rel="manifest"[^>]*>/, '')
+  .replace(/\s*<link rel="icon"[^>]*>/, '')
+  .replace('<link rel="stylesheet" href="css/styles.css">', () => `<style>\n${css}\n</style>`)
+  .replace('<script src="config.js"></script>', () => `<script>\n${config}\n</script>`)
+  .replace('<script type="module" src="js/app.js"></script>', () => `<script>\n(() => {\n'use strict';\n${bundle}\n})();\n</script>`);
+
+if (/src="js\/|href="css\/|src="config\.js/.test(standalone)) throw new Error('Sobraram referências externas no protótipo.');
+
+const outDir = path.join(root, 'prototype');
+mkdirSync(outDir, { recursive: true });
+writeFileSync(path.join(outDir, 'libras-acesso-prototipo.html'), standalone);
+console.log(`prototype/libras-acesso-prototipo.html gerado (${Math.round(standalone.length / 1024)} KB).`);
+
+// Variante para publicar como artefato: sem doctype/html/head/body (o publicador adiciona).
+const bodyMatch = standalone.match(/<body>([\s\S]*)<\/body>/);
+const styleMatch = standalone.match(/<style>[\s\S]*?<\/style>/);
+const configScript = standalone.match(/<script>[\s\S]*?<\/script>/); // o primeiro script inline é a configuração
+if (!bodyMatch || !styleMatch || !configScript) throw new Error('Não foi possível montar a variante para artefato.');
+const scratch = process.env.ARTIFACT_OUT;
+if (scratch) {
+  const page = `<title>Libras Acesso</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n${styleMatch[0]}\n${configScript[0]}\n${bodyMatch[1]}`;
+  writeFileSync(scratch, page);
+  console.log(`Variante para artefato gerada em ${scratch}`);
+}
+
+
+================================================================
+// ARQUIVO: backend/scripts/seed.js
+================================================================
+import 'dotenv/config';
+import { createRepository } from '../src/db/index.js';
+import { loadSeed } from '../data/seed.js';
+
+const provider = (process.env.DB_PROVIDER || 'memory').toLowerCase();
+
+if (provider === 'memory') {
+  console.log('DB_PROVIDER=memory não tem o que carregar. Use mysql ou supabase.');
+  process.exit(0);
+}
+
+const repo = await createRepository();
+
+try {
+  if (provider === 'mysql') {
+    console.log('Criando tabelas no MySQL...');
+    await repo.migrate();
+  } else {
+    console.log('Supabase: confirme que você rodou sql/supabase_schema.sql no SQL Editor.');
+  }
+
+  console.log('Carregando conteúdo inicial...');
+  await repo.seed(loadSeed());
+  console.log('Pronto.');
+  process.exit(0);
+} catch (err) {
+  console.error('Falha ao carregar os dados:', err.message);
+  process.exit(1);
+}
+
+
+================================================================
+// ARQUIVO: backend/test/api.test.js
+================================================================
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { createApp } from '../src/server.js';
+
+let server;
+let base;
+const uid = 'aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb';
+
+before(async () => {
+  const { app } = await createApp({ DB_PROVIDER: 'memory', NODE_ENV: 'test' });
+  await new Promise((resolve) => {
+    server = app.listen(0, resolve);
+  });
+  base = `http://127.0.0.1:${server.address().port}`;
+});
+after(() => server.close());
+
+const get = (p) => fetch(base + p).then(async (r) => ({ status: r.status, body: await r.json().catch(() => null) }));
+const send = (method, p, body) =>
+  fetch(base + p, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined }).then(async (r) => ({
+    status: r.status,
+    body: await r.json().catch(() => null)
+  }));
+
+test('health', async () => {
+  const r = await get('/api/health');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.provider, 'memory');
+});
+
+test('lista sinais e busca ignorando acentos', async () => {
+  assert.equal((await get('/api/signs')).body.length, 25);
+  const r = await get('/api/signs?q=agua');
+  assert.ok(r.body.some((s) => s.id === 'agua'));
+  const c = await get('/api/signs?category=saude');
+  assert.ok(c.body.length > 0 && c.body.every((s) => s.category === 'saude'));
+});
+
+test('sinal inexistente e id inválido', async () => {
+  assert.equal((await get('/api/signs/nao-existe')).status, 404);
+  assert.equal((await get('/api/signs/A%20B')).status, 400);
+});
+
+test('favoritos: adicionar, listar, remover', async () => {
+  assert.equal((await send('PUT', `/api/users/${uid}/favorites/agua`)).status, 204);
+  assert.deepEqual((await get(`/api/users/${uid}/favorites`)).body, ['agua']);
+  assert.equal((await send('PUT', `/api/users/${uid}/favorites/inexistente`)).status, 404);
+  assert.equal((await send('DELETE', `/api/users/${uid}/favorites/agua`)).status, 204);
+  assert.deepEqual((await get(`/api/users/${uid}/favorites`)).body, []);
+});
+
+test('tentativas: valida e grava', async () => {
+  assert.equal((await send('POST', `/api/users/${uid}/attempts`, { lessonId: 'licao-basico', score: 9, total: 5 })).status, 400);
+  assert.equal((await send('POST', `/api/users/${uid}/attempts`, { lessonId: 'licao-x', score: 1, total: 5 })).status, 404);
+  assert.equal((await send('POST', `/api/users/${uid}/attempts`, { lessonId: 'licao-basico', score: 4, total: 5 })).status, 201);
+  const list = (await get(`/api/users/${uid}/attempts`)).body;
+  assert.equal(list.length, 1);
+  assert.equal(list[0].score, 4);
+});
+
+test('apagar dados do usuário', async () => {
+  await send('PUT', `/api/users/${uid}/favorites/casa`);
+  assert.equal((await send('DELETE', `/api/users/${uid}`)).status, 204);
+  assert.deepEqual((await get(`/api/users/${uid}/favorites`)).body, []);
+  assert.deepEqual((await get(`/api/users/${uid}/attempts`)).body, []);
+});
+
+test('feedback valida mensagem', async () => {
+  assert.equal((await send('POST', '/api/feedback', { message: 'a' })).status, 400);
+  assert.equal((await send('POST', '/api/feedback', { message: 'Gostei muito do app' })).status, 201);
+});
+
+test('serve o frontend e cabeçalhos de segurança', async () => {
+  const r = await fetch(base + '/');
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-security-policy'), /default-src 'self'/);
+  assert.match(await r.text(), /Libras Acesso/);
+});
+
+
+================================================================
+// ARQUIVO: frontend/index.html
+================================================================
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b5fa5">
+  <meta name="description" content="Aplicativo de acessibilidade para pessoas surdas e com deficiência auditiva: dicionário de sinais, soletração, lições de Libras, legendas ao vivo, cartões de comunicação e alerta visual de sons.">
+  <title>Libras Acesso</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/styles.css">
+  <script src="config.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Pular para o conteúdo principal</a>
+
+  <!-- Regiões ao vivo para leitores de tela -->
+  <div id="live-polite" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="live-assertive" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
+
+  <!-- Alerta visual de som -->
+  <div id="flash" class="flash" aria-hidden="true"></div>
+  <div id="alert-toast" class="toast" role="alert" hidden></div>
+
+  <header class="site-header">
+    <div class="wrap header-top">
+      <a class="brand" href="#inicio" aria-label="Libras Acesso, ir para o início">
+        <span class="brand-mark" aria-hidden="true">LA</span>
+        <span class="brand-name">Libras Acesso</span>
+      </a>
+      <div class="header-actions">
+        <span id="alert-chip" class="chip chip-alert" hidden>Alerta de som ativo</span>
+        <span id="net-status" class="chip" role="status">Carregando…</span>
+        <button id="a11y-open" class="btn" type="button" aria-haspopup="dialog">Acessibilidade</button>
+      </div>
+    </div>
+    <div class="wrap">
+      <nav class="main-nav" aria-label="Principal">
+        <ul>
+          <li><a href="#inicio">Início</a></li>
+          <li><a href="#dicionario">Dicionário</a></li>
+          <li><a href="#alfabeto">Alfabeto</a></li>
+          <li><a href="#aprender">Aprender</a></li>
+          <li><a href="#comunicar">Comunicar</a></li>
+          <li><a href="#legendas">Legendas ao vivo</a></li>
+          <li><a href="#alerta">Alerta de som</a></li>
+          <li><a href="#progresso">Meu progresso</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap" tabindex="-1">
+
+    <!-- INÍCIO -->
+    <section data-view="inicio" aria-labelledby="h-inicio">
+      <h1 id="h-inicio" tabindex="-1">Comunicação e Libras ao seu alcance</h1>
+      <p class="lead">Ferramentas para conversar, aprender Libras e perceber sons do ambiente, pensadas para pessoas surdas e com deficiência auditiva.</p>
+
+      <ul class="feature-grid">
+        <li><a class="feature" href="#dicionario"><strong>Dicionário de sinais</strong><span>Busque palavras, leia a descrição de cada sinal e salve favoritos.</span></a></li>
+        <li><a class="feature" href="#alfabeto"><strong>Alfabeto e soletração</strong><span>Digite uma palavra e veja a soletração letra por letra.</span></a></li>
+        <li><a class="feature" href="#aprender"><strong>Lições e quiz</strong><span>Pratique grupos de sinais e acompanhe sua pontuação.</span></a></li>
+        <li><a class="feature" href="#comunicar"><strong>Cartões de comunicação</strong><span>Mostre frases em tela cheia para quem não sabe Libras.</span></a></li>
+        <li><a class="feature" href="#legendas"><strong>Legendas ao vivo</strong><span>Transforme a fala de quem está perto em texto grande.</span></a></li>
+        <li><a class="feature" href="#alerta"><strong>Alerta de som</strong><span>Receba aviso visual e vibração quando houver um som alto.</span></a></li>
+      </ul>
+
+      <aside class="notice" aria-labelledby="h-aviso">
+        <h2 id="h-aviso">Sobre o conteúdo</h2>
+        <p>Os sinais deste protótipo são exemplos para demonstrar o aplicativo. Antes de publicar, substitua as descrições por vídeos e textos revisados por intérpretes e pessoas surdas fluentes em Libras.</p>
+      </aside>
+
+      <section class="emergency" aria-labelledby="h-emerg">
+        <h2 id="h-emerg">Emergência no Brasil</h2>
+        <ul class="emergency-list">
+          <li><a href="tel:192"><strong>192</strong> SAMU</a></li>
+          <li><a href="tel:193"><strong>193</strong> Bombeiros</a></li>
+          <li><a href="tel:190"><strong>190</strong> Polícia</a></li>
+        </ul>
+        <p class="muted">Peça a alguém por perto para ligar. Em <a href="#comunicar">Comunicar</a> há cartões prontos para pedir ajuda.</p>
+      </section>
+    </section>
+
+    <!-- DICIONÁRIO -->
+    <section data-view="dicionario" aria-labelledby="h-dic" hidden>
+      <h1 id="h-dic" tabindex="-1">Dicionário de sinais</h1>
+      <div class="field">
+        <label for="dict-search">Buscar sinal</label>
+        <input id="dict-search" type="search" autocomplete="off" placeholder="Ex.: obrigado, água, médico">
+      </div>
+      <div id="dict-chips" class="chips" role="group" aria-label="Filtrar por categoria"></div>
+      <p id="dict-status" class="muted" role="status"></p>
+      <ul id="dict-grid" class="grid sign-grid"></ul>
+      <p id="dict-empty" class="empty" hidden>Nenhum sinal encontrado. Tente outra palavra ou escolha outra categoria.</p>
+    </section>
+
+    <!-- ALFABETO -->
+    <section data-view="alfabeto" aria-labelledby="h-alfa" hidden>
+      <h1 id="h-alfa" tabindex="-1">Alfabeto e soletração</h1>
+      <p class="lead">A soletração manual (datilologia) é usada para nomes de pessoas e lugares e para palavras sem sinal próprio.</p>
+
+      <aside class="notice notice-warn">
+        <p><strong>Sobre os emojis de mão.</strong> Eles só lembram a forma da mão em algumas letras e não substituem o sinal oficial. Confira cada letra em vídeo ou com um instrutor de Libras.</p>
+      </aside>
+
+      <form id="spell-form" class="spell-form">
+        <div class="field">
+          <label for="spell-input">Digite uma palavra ou nome</label>
+          <input id="spell-input" type="text" maxlength="40" autocomplete="off" placeholder="Ex.: Maria">
+          <p class="hint" id="spell-hint">Acentos e símbolos são ignorados. Use até 40 caracteres.</p>
+        </div>
+      </form>
+
+      <div class="spell-panel">
+        <div id="spell-stage" class="spell-stage" aria-hidden="true">?</div>
+        <p id="spell-count" class="spell-count" role="status">Digite uma palavra para começar.</p>
+        <div class="btn-row">
+          <button id="spell-prev" class="btn" type="button" disabled>Letra anterior</button>
+          <button id="spell-next" class="btn" type="button" disabled>Próxima letra</button>
+          <button id="spell-play" class="btn btn-primary" type="button" disabled aria-pressed="false">Reproduzir soletração</button>
+        </div>
+        <div class="field inline">
+          <label for="spell-speed">Velocidade</label>
+          <select id="spell-speed">
+            <option value="2000">Lenta</option>
+            <option value="1200" selected>Normal</option>
+            <option value="700">Rápida</option>
+          </select>
+        </div>
+        <ol id="spell-tiles" class="tiles" aria-label="Letras da palavra"></ol>
+      </div>
+
+      <h2>Todas as letras</h2>
+      <ul id="alpha-grid" class="tiles tiles-all"></ul>
+    </section>
+
+    <!-- APRENDER -->
+    <section data-view="aprender" aria-labelledby="h-apr" hidden>
+      <h1 id="h-apr" tabindex="-1">Aprender Libras</h1>
+      <div id="lessons-panel">
+        <p class="lead">Escolha uma lição. Em cada pergunta você lê a descrição de um sinal e escolhe a palavra correspondente.</p>
+        <ul id="lesson-list" class="grid lesson-grid"></ul>
+      </div>
+      <div id="quiz" hidden></div>
+    </section>
+
+    <!-- COMUNICAR -->
+    <section data-view="comunicar" aria-labelledby="h-com" hidden>
+      <h1 id="h-com" tabindex="-1">Cartões de comunicação</h1>
+      <p class="lead">Toque em um cartão para mostrar a frase em tela cheia para quem está com você. Também é possível ouvir a frase em voz alta.</p>
+
+      <form id="custom-form" class="custom-form">
+        <div class="field">
+          <label for="custom-text">Escreva sua própria mensagem</label>
+          <textarea id="custom-text" rows="2" maxlength="280" placeholder="Digite aqui e mostre para a outra pessoa"></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Mostrar em tela cheia</button>
+      </form>
+
+      <div id="phrase-groups"></div>
+    </section>
+
+    <!-- LEGENDAS -->
+    <section data-view="legendas" aria-labelledby="h-leg" hidden>
+      <h1 id="h-leg" tabindex="-1">Legendas ao vivo</h1>
+      <p class="lead">O microfone capta a fala por perto e mostra o texto em letras grandes.</p>
+
+      <p id="cap-unsupported" class="notice notice-warn" hidden>Este navegador não tem reconhecimento de voz. Experimente o Google Chrome ou o Microsoft Edge, com conexão à internet.</p>
+
+      <div class="controls">
+        <button id="cap-start" class="btn btn-primary" type="button" aria-pressed="false">Iniciar legendas</button>
+        <div class="field inline">
+          <label for="cap-lang">Idioma da fala</label>
+          <select id="cap-lang">
+            <option value="pt-BR" selected>Português (Brasil)</option>
+            <option value="en-US">Inglês (EUA)</option>
+            <option value="es-ES">Espanhol</option>
+          </select>
+        </div>
+        <div class="field inline">
+          <label for="cap-size">Tamanho das letras</label>
+          <input id="cap-size" type="range" min="1.25" max="4" step="0.25" value="2">
+        </div>
+      </div>
+
+      <p id="cap-status" class="muted" role="status">Pronto para iniciar.</p>
+      <div id="cap-log" class="captions-box" role="log" aria-live="polite" aria-label="Texto reconhecido" tabindex="0"></div>
+      <p id="cap-interim" class="captions-interim" aria-hidden="true"></p>
+
+      <div class="btn-row">
+        <button id="cap-copy" class="btn" type="button">Copiar texto</button>
+        <button id="cap-save" class="btn" type="button">Salvar em arquivo .txt</button>
+        <button id="cap-clear" class="btn" type="button">Limpar</button>
+      </div>
+      <p class="hint">O reconhecimento de voz é feito pelo navegador. Em alguns navegadores o áudio é enviado a um serviço online. A precisão varia com ruído, sotaque e distância.</p>
+    </section>
+
+    <!-- ALERTA DE SOM -->
+    <section data-view="alerta" aria-labelledby="h-snd" hidden>
+      <h1 id="h-snd" tabindex="-1">Alerta de som</h1>
+      <p class="lead">Quando o volume do ambiente passa do limite escolhido, o aplicativo mostra um aviso grande, pisca a tela e vibra o aparelho.</p>
+
+      <div class="controls">
+        <button id="snd-start" class="btn btn-primary" type="button" aria-pressed="false">Ativar alerta</button>
+        <button id="snd-test" class="btn" type="button">Testar o aviso</button>
+      </div>
+
+      <div class="field">
+        <label for="snd-threshold">Limite de volume: <output id="snd-threshold-out" for="snd-threshold">70%</output></label>
+        <input id="snd-threshold" type="range" min="20" max="95" step="5" value="70">
+        <p class="hint">Valores menores avisam com sons mais baixos.</p>
+      </div>
+
+      <div class="meter-block">
+        <span id="snd-meter-label" class="meter-label">Volume do ambiente</span>
+        <div id="snd-meter" class="meter" role="meter" aria-labelledby="snd-meter-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="snd-fill" class="meter-fill"></div>
+          <div id="snd-mark" class="meter-mark"></div>
+        </div>
+      </div>
+
+      <p id="snd-status" class="muted" role="status">O alerta está desligado.</p>
+
+      <h2>Avisos recentes</h2>
+      <ol id="snd-history" class="history"><li class="muted">Nenhum aviso ainda.</li></ol>
+
+      <aside class="notice notice-warn">
+        <p><strong>Limites importantes.</strong> O alerta mede apenas o volume, não identifica o tipo de som (campainha, alarme, choro). Mantenha esta página aberta e a tela ligada, e não use como único meio de segurança contra incêndio ou alarmes.</p>
+      </aside>
+    </section>
+
+    <!-- PROGRESSO -->
+    <section data-view="progresso" aria-labelledby="h-prog" hidden>
+      <h1 id="h-prog" tabindex="-1">Meu progresso</h1>
+
+      <dl id="stats" class="stats"></dl>
+
+      <h2>Sinais favoritos</h2>
+      <ul id="fav-list" class="grid sign-grid"></ul>
+      <p id="fav-empty" class="empty" hidden>Você ainda não favoritou nenhum sinal. No dicionário, use o botão de estrela.</p>
+
+      <h2>Lições</h2>
+      <div class="table-scroll">
+        <table class="table">
+          <caption class="sr-only">Melhor pontuação por lição</caption>
+          <thead><tr><th scope="col">Lição</th><th scope="col">Melhor pontuação</th><th scope="col">Tentativas</th></tr></thead>
+          <tbody id="attempt-rows"></tbody>
+        </table>
+      </div>
+
+      <h2>Enviar sugestão</h2>
+      <form id="feedback-form" class="feedback-form" novalidate>
+        <div class="field">
+          <label for="fb-message">Mensagem</label>
+          <textarea id="fb-message" rows="4" maxlength="1000" required aria-describedby="fb-hint"></textarea>
+          <p class="hint" id="fb-hint">Conte o que funcionou, o que faltou ou qual sinal deve ser corrigido.</p>
+        </div>
+        <div class="field">
+          <label for="fb-contact">Contato (opcional)</label>
+          <input id="fb-contact" type="text" maxlength="200" autocomplete="email" placeholder="E-mail ou WhatsApp, se quiser resposta">
+        </div>
+        <button class="btn btn-primary" type="submit">Enviar</button>
+        <p id="fb-status" class="form-status" role="status"></p>
+      </form>
+
+      <h2>Dados neste aparelho</h2>
+      <p class="muted">Favoritos e pontuações ficam salvos neste aparelho e, quando há conexão, no servidor, ligados a um código anônimo.</p>
+      <button id="reset-data" class="btn btn-danger" type="button">Apagar meus dados</button>
+      <p id="reset-status" class="form-status" role="status"></p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>Libras Acesso · protótipo de acessibilidade. Libras é a Língua Brasileira de Sinais, reconhecida pela Lei nº 10.436/2002.</p>
+    </div>
+  </footer>
+
+  <!-- Diálogo: detalhes do sinal -->
+  <dialog id="sign-dialog" class="dialog" aria-labelledby="sign-title">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="sign-title"></h2>
+        <button class="btn" type="button" data-close>Fechar</button>
+      </div>
+      <div id="sign-body"></div>
+    </div>
+  </dialog>
+
+  <!-- Diálogo: mensagem em tela cheia -->
+  <dialog id="show-dialog" class="dialog dialog-full" aria-labelledby="show-label">
+    <div class="dialog-inner show-inner">
+      <p id="show-label" class="show-label">Mensagem para você</p>
+      <p id="show-text" class="show-text"></p>
+      <div class="btn-row">
+        <button id="show-speak" class="btn btn-primary" type="button">Falar em voz alta</button>
+        <button class="btn" type="button" data-close>Fechar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Diálogo: opções de acessibilidade -->
+  <dialog id="a11y-dialog" class="dialog" aria-labelledby="a11y-title">
+    <div class="dialog-inner">
+      <div class="dialog-head">
+        <h2 id="a11y-title">Opções de acessibilidade</h2>
+        <button class="btn" type="button" data-close>Fechar</button>
+      </div>
+
+      <div class="field">
+        <label for="opt-fontsize">Tamanho do texto: <output id="opt-fontsize-out" for="opt-fontsize">100%</output></label>
+        <input id="opt-fontsize" type="range" min="100" max="200" step="10" value="100">
+      </div>
+
+      <fieldset class="field">
+        <legend>Tema</legend>
+        <label class="choice"><input type="radio" name="opt-theme" value="auto" checked> Seguir o aparelho</label>
+        <label class="choice"><input type="radio" name="opt-theme" value="light"> Claro</label>
+        <label class="choice"><input type="radio" name="opt-theme" value="dark"> Escuro</label>
+      </fieldset>
+
+      <div class="switches">
+        <label class="choice"><input id="opt-contrast" type="checkbox"> Alto contraste</label>
+        <label class="choice"><input id="opt-motion" type="checkbox"> Reduzir animações</label>
+        <label class="choice"><input id="opt-spacing" type="checkbox"> Aumentar espaço entre letras e linhas</label>
+        <label class="choice"><input id="opt-flash" type="checkbox" checked> Piscar a tela nos alertas</label>
+        <label class="choice"><input id="opt-vibrate" type="checkbox" checked> Vibrar nos alertas</label>
+      </div>
+      <p class="hint">Com “Reduzir animações” ligado, o alerta de som usa só o aviso na tela e a vibração.</p>
+
+      <button id="opt-reset" class="btn" type="button">Restaurar padrões</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
+
+
+================================================================
+// ARQUIVO: frontend/config.js
+================================================================
+// Configuração do frontend (carregada antes do app).
+window.APP_CONFIG = {
+  // URL base da API. Deixe vazio quando o servidor Node serve o frontend (mesma origem).
+  // Se o frontend estiver em outro domínio, use a URL do Render, ex.: 'https://libras-acesso.onrender.com'
+  API_URL: '',
+
+  // Pasta com imagens do alfabeto manual (A.png ... Z.png), ex.: '/assets/alfabeto'.
+  // Deixe null para mostrar apenas a letra.
+  ALPHABET_IMAGE_BASE: null,
+
+  // Registra o service worker (instalação como app e uso offline).
+  PWA: true
+};
+
+
+================================================================
+// ARQUIVO: frontend/manifest.webmanifest
+================================================================
+{
+  "name": "Libras Acesso",
+  "short_name": "Libras Acesso",
+  "description": "Acessibilidade para pessoas surdas e com deficiência auditiva: sinais, legendas ao vivo e alertas visuais.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0b5fa5",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
+
+
+================================================================
+// ARQUIVO: frontend/sw.js
+================================================================
+// Service worker: guarda os arquivos do app para abrir offline.
+// A API não é guardada aqui; o app já tem dados de exemplo e salva favoritos/pontuação no aparelho.
+const CACHE = 'libras-acesso-v1';
+const ASSETS = [
+  './', 'index.html', 'config.js', 'manifest.webmanifest', 'icon.svg', 'css/styles.css',
+  'js/app.js', 'js/storage.js', 'js/ui.js', 'js/data.js', 'js/api.js', 'js/state.js', 'js/a11y.js',
+  'js/router.js', 'js/dictionary.js', 'js/alphabet.js', 'js/learn.js', 'js/communicate.js',
+  'js/captions.js', 'js/soundalert.js', 'js/progress.js'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+
+  // Rede primeiro (conteúdo sempre atualizado), cache como reserva offline.
+  event.respondWith(
+    fetch(request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE).then((cache) => cache.put(request, copy));
+        return response;
+      })
+      .catch(() => caches.match(request).then((hit) => hit || caches.match('index.html')))
+  );
+});
+
+
+================================================================
+// ARQUIVO: frontend/icon.svg
+================================================================
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Libras Acesso">
+  <rect width="512" height="512" rx="112" fill="#0b5fa5"/>
+  <path d="M96 150a46 46 0 0 1 46-46h168a46 46 0 0 1 46 46v108a46 46 0 0 1-46 46H206l-62 56v-56h-2a46 46 0 0 1-46-46z" fill="#ffffff"/>
+  <path d="M286 244h84a46 46 0 0 1 46 46v76a46 46 0 0 1-46 46h-2v50l-58-50h-24a46 46 0 0 1-46-46v-76a46 46 0 0 1 46-46z" fill="#dcecf9" stroke="#0b5fa5" stroke-width="14"/>
+  <circle cx="162" cy="204" r="16" fill="#0b5fa5"/>
+  <circle cx="226" cy="204" r="16" fill="#0b5fa5"/>
+  <circle cx="290" cy="204" r="16" fill="#0b5fa5"/>
+</svg>
+
+
+================================================================
+// ARQUIVO: frontend/css/styles.css
+================================================================
+/* Libras Acesso: tokens de cor e tipografia.
+   Layout: coluna única legível, navegação em pílulas, cartões só onde há objeto a tocar. */
+:root {
+  --fs: 1;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eaeff5;
+  --fg: #111a24;
+  --muted: #465366;
+  --border: #c3ccd8;
+  --accent: #0b5fa5;
+  --accent-strong: #084a82;
+  --accent-fg: #ffffff;
+  --accent-soft: #dcecf9;
+  --danger: #b42318;
+  --danger-soft: #fdeceb;
+  --success: #146c3a;
+  --success-soft: #e0f4e8;
+  --warn-soft: #fff3d1;
+  --warn-fg: #5e3d00;
+  --alert-bg: #b42318;
+  --alert-fg: #ffffff;
+  --focus: #c2410c;
+  --flash: #ffffff;
+  --shadow: 0 1px 2px rgb(17 26 36 / .08), 0 6px 18px rgb(17 26 36 / .06);
+  --radius: 14px;
+  --caption-size: 2rem;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1520;
+    --surface: #17202d;
+    --surface-2: #1f2a3a;
+    --fg: #eef2f8;
+    --muted: #b5c0d0;
+    --border: #36445a;
+    --accent: #8fc2f2;
+    --accent-strong: #b9dafa;
+    --accent-fg: #07203a;
+    --accent-soft: #1b3248;
+    --danger: #ff9d94;
+    --danger-soft: #3a1f1f;
+    --success: #7fdca3;
+    --success-soft: #16301f;
+    --warn-soft: #3a2f10;
+    --warn-fg: #ffd98a;
+    --alert-bg: #ffb4ab;
+    --alert-fg: #3b0602;
+    --focus: #ffcf5c;
+    --flash: #ffffff;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4);
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0e1520;
+  --surface: #17202d;
+  --surface-2: #1f2a3a;
+  --fg: #eef2f8;
+  --muted: #b5c0d0;
+  --border: #36445a;
+  --accent: #8fc2f2;
+  --accent-strong: #b9dafa;
+  --accent-fg: #07203a;
+  --accent-soft: #1b3248;
+  --danger: #ff9d94;
+  --danger-soft: #3a1f1f;
+  --success: #7fdca3;
+  --success-soft: #16301f;
+  --warn-soft: #3a2f10;
+  --warn-fg: #ffd98a;
+  --alert-bg: #ffb4ab;
+  --alert-fg: #3b0602;
+  --focus: #ffcf5c;
+  --flash: #ffffff;
+  --shadow: 0 1px 2px rgb(0 0 0 / .4);
+  color-scheme: dark;
+}
+
+/* Alto contraste: claro */
+:root[data-contrast="high"] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --fg: #000000;
+  --muted: #000000;
+  --border: #000000;
+  --accent: #0000b3;
+  --accent-strong: #000080;
+  --accent-fg: #ffffff;
+  --accent-soft: #ffffff;
+  --danger: #8f0000;
+  --danger-soft: #ffffff;
+  --success: #004d1a;
+  --success-soft: #ffffff;
+  --warn-soft: #ffffff;
+  --warn-fg: #000000;
+  --alert-bg: #8f0000;
+  --alert-fg: #ffffff;
+  --focus: #000000;
+  --shadow: none;
+}
+
+/* Alto contraste: escuro */
+@media (prefers-color-scheme: dark) {
+  :root[data-contrast="high"]:not([data-theme="light"]) {
+    --bg: #000000;
+    --surface: #000000;
+    --surface-2: #000000;
+    --fg: #ffffff;
+    --muted: #ffffff;
+    --border: #ffffff;
+    --accent: #ffe600;
+    --accent-strong: #fff27a;
+    --accent-fg: #000000;
+    --accent-soft: #000000;
+    --danger: #ff8a80;
+    --danger-soft: #000000;
+    --success: #7dffa8;
+    --success-soft: #000000;
+    --warn-soft: #000000;
+    --warn-fg: #ffffff;
+    --alert-bg: #ffe600;
+    --alert-fg: #000000;
+    --focus: #00e5ff;
+  }
+}
+:root[data-contrast="high"][data-theme="dark"] {
+  --bg: #000000;
+  --surface: #000000;
+  --surface-2: #000000;
+  --fg: #ffffff;
+  --muted: #ffffff;
+  --border: #ffffff;
+  --accent: #ffe600;
+  --accent-strong: #fff27a;
+  --accent-fg: #000000;
+  --accent-soft: #000000;
+  --danger: #ff8a80;
+  --danger-soft: #000000;
+  --success: #7dffa8;
+  --success-soft: #000000;
+  --warn-soft: #000000;
+  --warn-fg: #ffffff;
+  --alert-bg: #ffe600;
+  --alert-fg: #000000;
+  --focus: #00e5ff;
+}
+
+/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+html {
+  font-size: calc(100% * var(--fs));
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 1rem/1.6 var(--font);
+  min-height: 100vh;
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--surface);
+  z-index: 50;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0 0 .75rem; }
+h1 { font-size: 2rem; margin-top: 1.5rem; }
+h2 { font-size: 1.4rem; margin-top: 2rem; }
+h3 { font-size: 1.15rem; margin-top: 1.5rem; }
+h1:focus { outline: none; }
+p { margin: 0 0 1rem; max-width: 65ch; }
+.lead { font-size: 1.15rem; color: var(--muted); }
+.muted, .hint { color: var(--muted); }
+.hint { font-size: .9rem; margin: .35rem 0 0; }
+a { color: var(--accent); text-underline-offset: .2em; }
+a:hover { color: var(--accent-strong); }
+
+:focus-visible {
+  outline: 4px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 1rem; top: -4rem;
+  z-index: 200;
+  background: var(--accent);
+  color: var(--accent-fg);
+  padding: .75rem 1rem;
+  border-radius: 10px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.skip-link:focus { top: max(1rem, env(safe-area-inset-top, 0px)); }
+
+/* ---------- Cabeçalho ---------- */
+.site-header {
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  padding-block: .75rem;
+  position: relative;
+  z-index: 40;
+}
+@media (min-width: 60rem) {
+  .site-header { position: sticky; top: env(safe-area-inset-top, 0px); }
+}
+.header-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .6rem;
+  color: var(--fg);
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 1.25rem;
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2.5rem; height: 2.5rem;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 1rem;
+  letter-spacing: .04em;
+}
+.header-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+
+.main-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  list-style: none;
+  margin: .75rem 0 0;
+  padding: 0;
+}
+.main-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.75rem;
+  padding: .4rem .95rem;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  color: var(--fg);
+  font-weight: 600;
+  text-decoration: none;
+}
+.main-nav a:hover { background: var(--surface-2); border-color: var(--border); }
+.main-nav a[aria-current="page"] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+main { padding-block: .5rem 3rem; outline: none; }
+.site-footer { border-top: 2px solid var(--border); padding-block: 1.5rem 2rem; color: var(--muted); }
+.site-footer p { margin: 0; }
+
+/* ---------- Componentes ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 2.75rem;
+  padding: .55rem 1.1rem;
+  border-radius: 10px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn-primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn-danger { border-color: var(--danger); color: var(--danger); }
+.btn-row { display: flex; flex-wrap: wrap; gap: .6rem; margin: 1rem 0; }
+.controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1rem 1.5rem; margin-bottom: 1rem; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .25rem .75rem;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  font-size: .875rem;
+  font-weight: 650;
+  background: var(--surface);
+}
+.chip.is-ok { border-color: var(--success); color: var(--success); }
+.chip.is-warn { border-color: var(--warn-fg); color: var(--warn-fg); background: var(--warn-soft); }
+.chip-alert { border-color: var(--alert-bg); background: var(--alert-bg); color: var(--alert-fg); }
+
+.field { display: grid; gap: .35rem; margin: 0 0 1rem; border: 0; padding: 0; min-width: 0; }
+.field.inline { margin: 0; }
+.field label, .field legend { font-weight: 650; padding: 0; }
+input[type="text"], input[type="search"], textarea, select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: .6rem .8rem;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+}
+select { width: auto; max-width: 100%; }
+textarea { resize: vertical; }
+input[type="range"] { width: 100%; min-width: 10rem; accent-color: var(--accent); min-height: 2.75rem; }
+input[type="checkbox"], input[type="radio"] { width: 1.4rem; height: 1.4rem; accent-color: var(--accent); flex: none; }
+.choice { display: flex; align-items: center; gap: .65rem; min-height: 2.75rem; font-weight: 500; cursor: pointer; }
+.switches { display: grid; gap: .1rem; margin: 0 0 .5rem; }
+
+.chips { display: flex; flex-wrap: wrap; gap: .5rem; margin: .5rem 0 1rem; }
+.chip-btn {
+  min-height: 2.75rem;
+  padding: .4rem 1rem;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.chip-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+.notice {
+  margin: 1.5rem 0;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.notice h2 { margin: 0 0 .4rem; font-size: 1.1rem; }
+.notice p:last-child { margin-bottom: 0; }
+.notice-warn { background: var(--warn-soft); color: var(--warn-fg); border-color: var(--warn-fg); }
+.empty { padding: 1.5rem; border: 2px dashed var(--border); border-radius: var(--radius); color: var(--muted); }
+.form-status { margin: .75rem 0 0; font-weight: 600; min-height: 1.5rem; }
+.form-status.is-error { color: var(--danger); }
+.form-status.is-ok { color: var(--success); }
+
+/* ---------- Início ---------- */
+.feature-grid, .grid { list-style: none; margin: 1.25rem 0; padding: 0; display: grid; gap: 1rem; }
+.feature-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); }
+.feature {
+  display: grid;
+  gap: .35rem;
+  height: 100%;
+  padding: 1.1rem 1.2rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  text-decoration: none;
+  box-shadow: var(--shadow);
+}
+.feature strong { font-size: 1.1rem; color: var(--accent); }
+.feature span { color: var(--muted); }
+.feature:hover { border-color: var(--accent); }
+
+.emergency { margin-top: 2rem; }
+.emergency-list { display: flex; flex-wrap: wrap; gap: .75rem; list-style: none; padding: 0; margin: 0 0 1rem; }
+.emergency-list a {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .6rem;
+  min-height: 2.75rem;
+  padding: .6rem 1.1rem;
+  border: 2px solid var(--danger);
+  border-radius: 12px;
+  color: var(--danger);
+  font-weight: 650;
+  text-decoration: none;
+}
+.emergency-list strong { font-size: 1.5rem; }
+
+/* ---------- Dicionário ---------- */
+.sign-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 12.5rem), 1fr)); }
+.sign-card { position: relative; }
+.sign-open {
+  display: grid;
+  gap: .25rem;
+  justify-items: start;
+  width: 100%;
+  min-height: 8.5rem;
+  padding: 1rem 3.4rem 1rem 1rem;
+  text-align: left;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.sign-open:hover { border-color: var(--accent); }
+.sign-emoji { font-size: 2rem; line-height: 1; }
+.sign-word { font-size: 1.15rem; font-weight: 700; overflow-wrap: anywhere; }
+.sign-cat { font-size: .875rem; color: var(--muted); }
+.fav-btn {
+  position: absolute;
+  top: .5rem; right: .5rem;
+  width: 2.75rem; height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 1.35rem;
+  cursor: pointer;
+}
+.fav-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+
+/* ---------- Diálogos ---------- */
+.dialog {
+  width: calc(100% - 2rem);
+  max-width: 40rem;
+  max-height: calc(100% - 2rem);
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  overflow: auto;
+}
+.dialog::backdrop { background: rgb(0 0 0 / .6); }
+.dialog-inner { padding: 1.25rem; }
+.dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.dialog-head h2 { margin: 0; font-size: 1.5rem; overflow-wrap: anywhere; }
+
+.sign-media {
+  display: grid;
+  place-items: center;
+  gap: .5rem;
+  min-height: 12rem;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  text-align: center;
+}
+.sign-media .big { font-size: 4.5rem; line-height: 1; }
+.sign-media video, .sign-media img { width: 100%; max-height: 22rem; border-radius: 10px; }
+.badge {
+  display: inline-block;
+  padding: .2rem .7rem;
+  border-radius: 999px;
+  border: 2px solid var(--border);
+  font-size: .85rem;
+  font-weight: 650;
+}
+.badge.ok { border-color: var(--success); color: var(--success); }
+.badge.warn { border-color: var(--warn-fg); color: var(--warn-fg); background: var(--warn-soft); }
+
+.dialog-full { width: 100%; max-width: none; height: 100%; max-height: none; border-radius: 0; border: 0; }
+.show-inner { min-height: 100%; display: grid; align-content: center; justify-items: center; gap: 1rem; text-align: center; }
+.show-label { color: var(--muted); font-weight: 650; margin: 0; max-width: none; }
+.show-text { font-size: clamp(2rem, 8vw, 5rem); line-height: 1.2; font-weight: 800; margin: 0; max-width: 22ch; overflow-wrap: anywhere; }
+
+/* ---------- Soletração ---------- */
+.spell-panel { margin: 1rem 0 2rem; }
+.spell-stage {
+  display: grid;
+  place-items: center;
+  min-height: 12rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 8rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--accent);
+}
+.spell-stage img { max-height: 11rem; max-width: 100%; }
+.spell-stage { align-content: center; gap: .25rem; padding: 1rem; }
+.hand-emoji { font-size: 4.5rem; line-height: 1.1; }
+.hand-text { font-size: 1rem; font-weight: 500; color: var(--muted); text-align: center; }
+.tiles-all .tile { width: auto; min-width: 3.25rem; padding-inline: .6rem; }
+.spell-count { margin: .75rem 0 0; font-weight: 650; }
+.tiles { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; padding: 0; margin: 1rem 0 0; }
+.tiles-all { margin-bottom: 2rem; }
+.tile {
+  display: grid;
+  place-items: center;
+  width: 3.25rem; height: 3.25rem;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.4rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+.tile[aria-current="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.tile-gap { width: 1.5rem; }
+
+/* ---------- Lições e quiz ---------- */
+.lesson-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr)); }
+.lesson-card {
+  display: grid;
+  gap: .5rem;
+  align-content: start;
+  height: 100%;
+  padding: 1.1rem 1.2rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.lesson-card h2 { margin: 0; font-size: 1.25rem; }
+.lesson-card p { margin: 0; color: var(--muted); }
+
+.quiz-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.quiz-box fieldset { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }
+.quiz-box legend { font-size: 1.15rem; font-weight: 700; padding: 0; margin-bottom: .75rem; }
+.quiz-box legend:focus { outline: none; }
+.prompt {
+  padding: 1rem 1.2rem;
+  border-left: 6px solid var(--accent);
+  background: var(--surface-2);
+  border-radius: 0 10px 10px 0;
+  font-size: 1.2rem;
+}
+.options { display: grid; gap: .6rem; }
+.option {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  min-height: 3.25rem;
+  padding: .7rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  cursor: pointer;
+  font-weight: 600;
+}
+.option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.option.correct { border-color: var(--success); background: var(--success-soft); }
+.option.wrong { border-color: var(--danger); background: var(--danger-soft); }
+.option .mark { margin-left: auto; font-weight: 750; }
+.feedback { font-weight: 700; margin: 0 0 1rem; }
+.result-score { font-size: 3rem; font-weight: 800; color: var(--accent); margin: 0; }
+
+/* ---------- Comunicar ---------- */
+.custom-form { margin-bottom: 1.5rem; max-width: 40rem; }
+.phrase-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 16rem), 1fr)); }
+.phrase-btn {
+  display: grid;
+  gap: .4rem;
+  align-content: start;
+  width: 100%;
+  min-height: 5.5rem;
+  padding: 1rem;
+  text-align: left;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.phrase-btn:hover { border-color: var(--accent); }
+.phrase-btn.urgent { border-color: var(--danger); }
+.phrase-tag { font-size: .8rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; color: var(--danger); }
+
+/* ---------- Legendas ---------- */
+.captions-box {
+  min-height: 14rem;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 1rem 1.25rem;
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--caption-size);
+  line-height: 1.35;
+}
+.caption-line { margin: 0 0 .8rem; max-width: none; overflow-wrap: anywhere; }
+.caption-line time { display: block; font-size: .8rem; color: var(--muted); }
+.captions-interim { min-height: 2rem; margin: .5rem 0 0; font-size: var(--caption-size); color: var(--muted); max-width: none; overflow-wrap: anywhere; }
+
+/* ---------- Alerta de som ---------- */
+.meter-block { margin: 1rem 0; max-width: 40rem; }
+.meter-label { display: block; font-weight: 650; margin-bottom: .35rem; }
+.meter {
+  position: relative;
+  height: 1.5rem;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+.meter-fill { height: 100%; width: 0; background: var(--accent); transition: width .08s linear; }
+.meter-mark { position: absolute; top: 0; bottom: 0; width: 4px; background: var(--danger); left: 60%; }
+.history { padding-left: 1.4rem; display: grid; gap: .4rem; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  top: max(1rem, env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 10000;
+  width: max-content;
+  max-width: calc(100% - 2rem);
+  padding: 1rem 1.5rem;
+  border-radius: 14px;
+  background: var(--alert-bg);
+  color: var(--alert-fg);
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-align: center;
+  box-shadow: 0 8px 30px rgb(0 0 0 / .35);
+}
+
+.flash { position: fixed; inset: 0; z-index: 9999; pointer-events: none; background: var(--flash); opacity: 0; }
+.flash.on { animation: flash-pulse 1.2s ease-in-out 2; }
+@keyframes flash-pulse { 0%, 100% { opacity: 0; } 50% { opacity: .75; } }
+:root[data-flash="off"] .flash { display: none; }
+
+/* ---------- Progresso ---------- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: 1rem; margin: 1rem 0; }
+.stat { padding: 1rem 1.2rem; border: 2px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.stat dt { color: var(--muted); font-weight: 650; }
+.stat dd { margin: .2rem 0 0; font-size: 2rem; font-weight: 800; color: var(--accent); }
+.table-scroll { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: .7rem .9rem; border-bottom: 2px solid var(--border); }
+.table th { font-weight: 700; }
+.feedback-form { max-width: 40rem; }
+
+/* ---------- Preferências do usuário ---------- */
+:root[data-spacing="wide"] body { line-height: 1.95; letter-spacing: .04em; word-spacing: .14em; }
+:root[data-spacing="wide"] p { margin-bottom: 1.6rem; }
+
+:root[data-contrast="high"] a { text-decoration-thickness: 2px; }
+:root[data-contrast="high"] .btn,
+:root[data-contrast="high"] .sign-open,
+:root[data-contrast="high"] .chip-btn,
+:root[data-contrast="high"] input,
+:root[data-contrast="high"] textarea,
+:root[data-contrast="high"] select { border-width: 3px; }
+
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after {
+  animation: none !important;
+  transition: none !important;
+  scroll-behavior: auto !important;
+}
+:root[data-motion="reduce"] .flash { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .flash { display: none; }
+}
+
+@media (max-width: 30rem) {
+  h1 { font-size: 1.65rem; }
+  .spell-stage { font-size: 6rem; min-height: 9rem; }
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/a11y.js
+================================================================
+import { $, openDialog, wireDialog } from './ui.js';
+import { storage } from './storage.js';
+
+const DEFAULT_SETTINGS = { fontScale: 100, theme: 'auto', contrast: false, motion: false, spacing: false, flash: true, vibrate: true };
+export const settings = { ...DEFAULT_SETTINGS, ...storage.get('settings', {}) };
+
+let themeApplied = false;
+
+function applySettings() {
+  const root = document.documentElement;
+  root.style.setProperty('--fs', String(settings.fontScale / 100));
+
+  // Só mexe no tema se a pessoa escolheu um (ou se fomos nós que o definimos antes).
+  if (settings.theme !== 'auto') {
+    root.setAttribute('data-theme', settings.theme);
+    themeApplied = true;
+  } else if (themeApplied) {
+    root.removeAttribute('data-theme');
+    themeApplied = false;
+  }
+
+  root.dataset.contrast = settings.contrast ? 'high' : 'normal';
+  root.dataset.motion = settings.motion ? 'reduce' : 'normal';
+  root.dataset.spacing = settings.spacing ? 'wide' : 'normal';
+  root.dataset.flash = settings.flash ? 'on' : 'off';
+  root.dataset.vibrate = settings.vibrate ? 'on' : 'off';
+}
+
+function syncControls() {
+  $('#opt-fontsize').value = settings.fontScale;
+  $('#opt-fontsize-out').textContent = `${settings.fontScale}%`;
+  document.querySelectorAll('input[name="opt-theme"]').forEach((radio) => {
+    radio.checked = radio.value === settings.theme;
+  });
+  $('#opt-contrast').checked = settings.contrast;
+  $('#opt-motion').checked = settings.motion;
+  $('#opt-spacing').checked = settings.spacing;
+  $('#opt-flash').checked = settings.flash;
+  $('#opt-vibrate').checked = settings.vibrate;
+}
+
+function update(patch) {
+  Object.assign(settings, patch);
+  storage.set('settings', settings);
+  applySettings();
+}
+
+export function initA11y() {
+  applySettings();
+  syncControls();
+
+  const dialog = $('#a11y-dialog');
+  wireDialog(dialog);
+  $('#a11y-open').addEventListener('click', () => openDialog(dialog));
+
+  $('#opt-fontsize').addEventListener('input', (event) => {
+    const value = Number(event.target.value);
+    $('#opt-fontsize-out').textContent = `${value}%`;
+    update({ fontScale: value });
+  });
+  document.querySelectorAll('input[name="opt-theme"]').forEach((radio) => {
+    radio.addEventListener('change', () => update({ theme: radio.value }));
+  });
+  $('#opt-contrast').addEventListener('change', (e) => update({ contrast: e.target.checked }));
+  $('#opt-motion').addEventListener('change', (e) => update({ motion: e.target.checked }));
+  $('#opt-spacing').addEventListener('change', (e) => update({ spacing: e.target.checked }));
+  $('#opt-flash').addEventListener('change', (e) => update({ flash: e.target.checked }));
+  $('#opt-vibrate').addEventListener('change', (e) => update({ vibrate: e.target.checked }));
+  $('#opt-reset').addEventListener('click', () => {
+    update({ ...DEFAULT_SETTINGS });
+    syncControls();
+  });
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/alphabet.js
+================================================================
+import { $, el, normalize, debounce } from './ui.js';
+import { on } from './state.js';
+
+const LETTERS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+// Emojis que lembram a forma da mão, só para letras em que a semelhança é clara.
+// São aproximações: o emoji não reproduz o sinal oficial. Para imagens oficiais, use ALPHABET_IMAGE_BASE.
+const HAND_HINTS = {
+  A: { emoji: '✊', text: 'punho fechado, polegar ao lado' },
+  B: { emoji: '✋', text: 'mão aberta, dedos juntos' },
+  D: { emoji: '☝️', text: 'indicador para cima' },
+  F: { emoji: '👌', text: 'polegar e indicador em círculo' },
+  R: { emoji: '🤞', text: 'indicador e médio cruzados' },
+  V: { emoji: '✌️', text: 'indicador e médio em V' },
+  Y: { emoji: '🤙', text: 'polegar e mínimo estendidos' }
+};
+
+export function initAlphabet() {
+  const input = $('#spell-input');
+  const stage = $('#spell-stage');
+  const count = $('#spell-count');
+  const tiles = $('#spell-tiles');
+  const prev = $('#spell-prev');
+  const next = $('#spell-next');
+  const play = $('#spell-play');
+  const speed = $('#spell-speed');
+  const grid = $('#alpha-grid');
+  const imageBase = window.APP_CONFIG?.ALPHABET_IMAGE_BASE;
+
+  let chars = []; // letras e espaços da palavra
+  let letterPositions = []; // índices de `chars` que são letras
+  let pos = 0; // posição atual dentro de letterPositions
+  let timer = null;
+
+  function showLetter(letter) {
+    stage.replaceChildren();
+    if (imageBase) {
+      stage.append(
+        el('img', {
+          src: `${imageBase}/${letter}.png`,
+          alt: '',
+          onerror: (event) => {
+            event.currentTarget.remove();
+            stage.textContent = letter;
+          }
+        })
+      );
+    } else {
+      const hint = HAND_HINTS[letter];
+      stage.replaceChildren(
+        el('span', { text: letter }),
+        hint ? el('span', { class: 'hand-emoji', text: hint.emoji }) : null,
+        hint ? el('span', { class: 'hand-text', text: `Mão aproximada: ${hint.text}` }) : el('span', { class: 'hand-text', text: 'Sem emoji parecido. Veja o sinal em vídeo ou com um instrutor.' })
+      );
+    }
+  }
+
+  function renderTiles() {
+    tiles.replaceChildren(
+      ...chars.map((char, index) => {
+        if (char === ' ') return el('li', { class: 'tile-gap', 'aria-hidden': 'true' });
+        const step = letterPositions.indexOf(index);
+        return el(
+          'li',
+          {},
+          el('button', {
+            type: 'button',
+            class: 'tile',
+            'data-step': String(step),
+            'aria-label': `Letra ${char}, ${step + 1} de ${letterPositions.length}`,
+            text: char,
+            onclick: () => {
+              stopPlay();
+              pos = step;
+              update();
+            }
+          })
+        );
+      })
+    );
+  }
+
+  function update() {
+    const has = letterPositions.length > 0;
+    prev.disabled = !has || pos === 0;
+    next.disabled = !has || pos >= letterPositions.length - 1;
+    play.disabled = !has;
+    if (!has) {
+      stage.textContent = '?';
+      count.textContent = 'Digite uma palavra para começar.';
+      return;
+    }
+    const letter = chars[letterPositions[pos]];
+    showLetter(letter);
+    count.textContent = `Letra ${letter}, ${pos + 1} de ${letterPositions.length}`;
+    tiles.querySelectorAll('.tile').forEach((tile) => {
+      if (Number(tile.dataset.step) === pos) tile.setAttribute('aria-current', 'true');
+      else tile.removeAttribute('aria-current');
+    });
+  }
+
+  function stopPlay() {
+    clearInterval(timer);
+    timer = null;
+    play.setAttribute('aria-pressed', 'false');
+    play.textContent = 'Reproduzir soletração';
+  }
+
+  function startPlay() {
+    if (!letterPositions.length) return;
+    if (pos >= letterPositions.length - 1) pos = 0;
+    update();
+    play.setAttribute('aria-pressed', 'true');
+    play.textContent = 'Pausar';
+    timer = setInterval(() => {
+      if (pos >= letterPositions.length - 1) {
+        stopPlay();
+        return;
+      }
+      pos += 1;
+      update();
+    }, Number(speed.value));
+  }
+
+  function parse() {
+    stopPlay();
+    chars = [...normalize(input.value).replace(/\s+/g, ' ')].filter((c) => /[a-z ]/.test(c)).map((c) => c.toUpperCase());
+    letterPositions = chars.map((c, i) => (c === ' ' ? -1 : i)).filter((i) => i >= 0);
+    pos = 0;
+    renderTiles();
+    update();
+  }
+
+  input.addEventListener('input', debounce(parse, 150));
+  $('#spell-form').addEventListener('submit', (event) => event.preventDefault());
+  prev.addEventListener('click', () => {
+    stopPlay();
+    pos = Math.max(0, pos - 1);
+    update();
+  });
+  next.addEventListener('click', () => {
+    stopPlay();
+    pos = Math.min(letterPositions.length - 1, pos + 1);
+    update();
+  });
+  play.addEventListener('click', () => (timer ? stopPlay() : startPlay()));
+  speed.addEventListener('change', () => {
+    if (timer) {
+      stopPlay();
+      startPlay();
+    }
+  });
+
+  grid.replaceChildren(
+    ...LETTERS.map((letter) =>
+      el(
+        'li',
+        {},
+        el('button', {
+          type: 'button',
+          class: 'tile',
+          'aria-label': `Mostrar a letra ${letter}`,
+          text: HAND_HINTS[letter] ? `${letter} ${HAND_HINTS[letter].emoji}` : letter,
+          onclick: () => {
+            stopPlay();
+            showLetter(letter);
+            count.textContent = `Letra ${letter} do alfabeto`;
+            tiles.querySelectorAll('.tile').forEach((tile) => tile.removeAttribute('aria-current'));
+            stage.scrollIntoView?.({ block: 'center' });
+          }
+        })
+      )
+    )
+  );
+
+  // Vindo do dicionário: "Ver soletração"
+  on('spell', (word) => {
+    input.value = word;
+    parse();
+  });
+
+  update();
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/api.js
+================================================================
+import { OFFLINE_DATA } from './data.js';
+import { storage, getUserId } from './storage.js';
+
+const TIMEOUT_MS = 6000;
+
+/**
+ * Cliente da API. Se o servidor não responder, o app continua funcionando
+ * com os dados de exemplo e guarda favoritos e pontuações no aparelho.
+ */
+export const api = {
+  baseUrl: (window.APP_CONFIG && window.APP_CONFIG.API_URL) || '',
+  online: false,
+  userId: getUserId(),
+
+  async request(path, { method = 'GET', body } = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(this.baseUrl + path, {
+        method,
+        signal: controller.signal,
+        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (!response.ok) {
+        const error = new Error(`HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      this.online = true;
+      return response.status === 204 ? null : await response.json();
+    } catch (error) {
+      if (!error.status) this.online = false; // erro de rede, não de validação
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+
+  async loadCatalog() {
+    // Aberto como arquivo local (duplo clique) e sem API_URL: não há servidor para chamar.
+    if (!this.baseUrl && location.protocol === 'file:') {
+      this.online = false;
+      return { ...OFFLINE_DATA, source: 'offline' };
+    }
+    try {
+      const [categories, signs, lessons, phrases] = await Promise.all([
+        this.request('/api/categories'),
+        this.request('/api/signs'),
+        this.request('/api/lessons'),
+        this.request('/api/phrases')
+      ]);
+      if (![categories, signs, lessons, phrases].every(Array.isArray)) throw new Error('Resposta inesperada');
+      return { categories, signs, lessons, phrases, source: 'server' };
+    } catch {
+      this.online = false;
+      return { ...OFFLINE_DATA, source: 'offline' };
+    }
+  },
+
+  async loadFavorites() {
+    const local = storage.get('favorites', []);
+    if (!this.online) return local;
+    try {
+      const remote = await this.request(`/api/users/${this.userId}/favorites`);
+      const merged = [...new Set([...remote, ...local])];
+      storage.set('favorites', merged);
+      // envia ao servidor o que só existia no aparelho
+      for (const id of local.filter((x) => !remote.includes(x))) {
+        this.request(`/api/users/${this.userId}/favorites/${encodeURIComponent(id)}`, { method: 'PUT' }).catch(() => {});
+      }
+      return merged;
+    } catch {
+      return local;
+    }
+  },
+
+  async setFavorite(signId, isFavorite) {
+    const list = new Set(storage.get('favorites', []));
+    if (isFavorite) list.add(signId);
+    else list.delete(signId);
+    storage.set('favorites', [...list]);
+    if (!this.online) return;
+    try {
+      await this.request(`/api/users/${this.userId}/favorites/${encodeURIComponent(signId)}`, {
+        method: isFavorite ? 'PUT' : 'DELETE'
+      });
+    } catch {
+      /* fica salvo no aparelho e sincroniza na próxima abertura */
+    }
+  },
+
+  async saveAttempt({ lessonId, score, total }) {
+    const record = { lessonId, score, total, createdAt: new Date().toISOString() };
+    const local = storage.get('attempts', []);
+    local.push(record);
+    storage.set('attempts', local.slice(-200));
+    if (this.online) {
+      try {
+        await this.request(`/api/users/${this.userId}/attempts`, { method: 'POST', body: { lessonId, score, total } });
+      } catch {
+        /* mantém só no aparelho */
+      }
+    }
+    return record;
+  },
+
+  async loadAttempts() {
+    const local = [...storage.get('attempts', [])].reverse();
+    if (!this.online) return local;
+    try {
+      const remote = await this.request(`/api/users/${this.userId}/attempts`);
+      return remote.length >= local.length ? remote : local;
+    } catch {
+      return local;
+    }
+  },
+
+  async sendFeedback({ message, contact }) {
+    return this.request('/api/feedback', { method: 'POST', body: { userId: this.userId, message, contact } });
+  },
+
+  /** Apaga favoritos e pontuações no aparelho e, se possível, no servidor. */
+  async deleteMyData() {
+    storage.remove('favorites');
+    storage.remove('attempts');
+    if (!this.online) return { server: false };
+    try {
+      await this.request(`/api/users/${this.userId}`, { method: 'DELETE' });
+      return { server: true };
+    } catch {
+      return { server: false };
+    }
+  }
+};
+
+
+================================================================
+// ARQUIVO: frontend/js/app.js
+================================================================
+import { $ } from './ui.js';
+import { api } from './api.js';
+import { state } from './state.js';
+import { initA11y } from './a11y.js';
+import { initRouter } from './router.js';
+import { initDictionary } from './dictionary.js';
+import { initAlphabet } from './alphabet.js';
+import { initLearn } from './learn.js';
+import { initCommunicate } from './communicate.js';
+import { initCaptions } from './captions.js';
+import { initSoundAlert } from './soundalert.js';
+import { initProgress } from './progress.js';
+
+function updateNetStatus() {
+  const chip = $('#net-status');
+  const connected = state.source === 'server';
+  chip.textContent = connected ? 'Conectado ao servidor' : 'Modo offline (dados do aparelho)';
+  chip.classList.toggle('is-ok', connected);
+  chip.classList.toggle('is-warn', !connected);
+}
+
+async function boot() {
+  initA11y();
+
+  const catalog = await api.loadCatalog();
+  Object.assign(state, {
+    categories: catalog.categories,
+    signs: catalog.signs,
+    lessons: catalog.lessons,
+    phrases: catalog.phrases,
+    source: catalog.source
+  });
+  state.favorites = new Set(await api.loadFavorites());
+  state.attempts = await api.loadAttempts();
+  updateNetStatus();
+
+  initDictionary();
+  initAlphabet();
+  initLearn();
+  initCommunicate();
+  initCaptions();
+  initSoundAlert();
+  initProgress();
+  initRouter();
+
+  if ('serviceWorker' in navigator && window.APP_CONFIG?.PWA !== false && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+}
+
+boot();
+
+
+================================================================
+// ARQUIVO: frontend/js/captions.js
+================================================================
+import { $, el, formatTime } from './ui.js';
+
+export function initCaptions() {
+  const SpeechRecognitionApi = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const startButton = $('#cap-start');
+  const langSelect = $('#cap-lang');
+  const sizeRange = $('#cap-size');
+  const log = $('#cap-log');
+  const interim = $('#cap-interim');
+  const status = $('#cap-status');
+  const lines = []; // { time, text }
+
+  const setStatus = (message) => {
+    status.textContent = message;
+  };
+
+  sizeRange.addEventListener('input', () => {
+    document.documentElement.style.setProperty('--caption-size', `${sizeRange.value}rem`);
+  });
+  document.documentElement.style.setProperty('--caption-size', `${sizeRange.value}rem`);
+
+  function addLine(textValue) {
+    const time = formatTime();
+    lines.push({ time, text: textValue });
+    log.append(el('p', { class: 'caption-line' }, el('time', { text: time }), textValue));
+    log.scrollTop = log.scrollHeight;
+  }
+
+  const allText = () => lines.map((l) => `[${l.time}] ${l.text}`).join('\n');
+
+  $('#cap-clear').addEventListener('click', () => {
+    lines.length = 0;
+    log.replaceChildren();
+    interim.textContent = '';
+    setStatus('Texto limpo.');
+  });
+
+  $('#cap-copy').addEventListener('click', async () => {
+    if (!lines.length) {
+      setStatus('Ainda não há texto para copiar.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(allText());
+      setStatus('Texto copiado.');
+    } catch {
+      const area = el('textarea', { 'aria-hidden': 'true', style: 'position:fixed;opacity:0' });
+      area.value = allText();
+      document.body.append(area);
+      area.select();
+      const ok = document.execCommand?.('copy');
+      area.remove();
+      setStatus(ok ? 'Texto copiado.' : 'Não foi possível copiar. Selecione o texto e copie manualmente.');
+    }
+  });
+
+  $('#cap-save').addEventListener('click', () => {
+    if (!lines.length) {
+      setStatus('Ainda não há texto para salvar.');
+      return;
+    }
+    const blob = new Blob([allText()], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = el('a', { href: url, download: `legendas-${new Date().toISOString().slice(0, 10)}.txt` });
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setStatus('Arquivo gerado.');
+  });
+
+  if (!SpeechRecognitionApi) {
+    $('#cap-unsupported').hidden = false;
+    startButton.disabled = true;
+    setStatus('Reconhecimento de voz indisponível neste navegador.');
+    return;
+  }
+
+  let recognition = null;
+  let running = false;
+  let restartTimer = null;
+
+  function stop(message = 'Legendas paradas.') {
+    running = false;
+    clearTimeout(restartTimer);
+    try {
+      recognition?.stop();
+    } catch {
+      /* já parado */
+    }
+    interim.textContent = '';
+    startButton.textContent = 'Iniciar legendas';
+    startButton.setAttribute('aria-pressed', 'false');
+    setStatus(message);
+  }
+
+  function start() {
+    recognition = new SpeechRecognitionApi();
+    recognition.lang = langSelect.value;
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => setStatus('Ouvindo. Fale perto do microfone.');
+    recognition.onresult = (event) => {
+      let partial = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const piece = result[0].transcript.trim();
+        if (result.isFinal) {
+          if (piece) addLine(piece);
+        } else {
+          partial += `${piece} `;
+        }
+      }
+      interim.textContent = partial.trim();
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech' || event.error === 'aborted') return;
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        stop('O acesso ao microfone foi negado. Libere a permissão nas configurações do navegador.');
+      } else if (event.error === 'network') {
+        stop('Sem conexão com o serviço de reconhecimento de voz. Verifique a internet.');
+      } else {
+        setStatus(`Erro no reconhecimento de voz (${event.error}).`);
+      }
+    };
+    recognition.onend = () => {
+      // O navegador encerra após silêncio; reinicia enquanto a pessoa quiser legendas.
+      if (!running) return;
+      restartTimer = setTimeout(() => {
+        try {
+          recognition.start();
+        } catch {
+          /* já iniciado */
+        }
+      }, 250);
+    };
+
+    running = true;
+    startButton.textContent = 'Parar legendas';
+    startButton.setAttribute('aria-pressed', 'true');
+    try {
+      recognition.start();
+    } catch {
+      stop('Não foi possível iniciar o reconhecimento de voz.');
+    }
+  }
+
+  startButton.addEventListener('click', () => (running ? stop() : start()));
+  langSelect.addEventListener('change', () => {
+    if (running) {
+      stop('Trocando o idioma…');
+      start();
+    }
+  });
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/communicate.js
+================================================================
+import { $, el, announce, openDialog, wireDialog } from './ui.js';
+import { state } from './state.js';
+
+const PHRASE_GROUPS = {
+  frequentes: 'Mais usadas',
+  essencial: 'Essenciais',
+  saude: 'Saúde e emergência',
+  cotidiano: 'Dia a dia'
+};
+
+export function initCommunicate() {
+  const groups = $('#phrase-groups');
+  const dialog = $('#show-dialog');
+  const text = $('#show-text');
+  const speakButton = $('#show-speak');
+  const form = $('#custom-form');
+  const custom = $('#custom-text');
+
+  wireDialog(dialog);
+
+  const canSpeak = 'speechSynthesis' in window && typeof SpeechSynthesisUtterance !== 'undefined';
+  speakButton.hidden = !canSpeak;
+
+  function show(message) {
+    text.textContent = message;
+    openDialog(dialog);
+  }
+
+  speakButton.addEventListener('click', () => {
+    speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text.textContent);
+    utterance.lang = 'pt-BR';
+    speechSynthesis.speak(utterance);
+  });
+  dialog.addEventListener('close', () => {
+    if (canSpeak) speechSynthesis.cancel();
+  });
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const message = custom.value.trim();
+    if (!message) {
+      announce('Escreva uma mensagem primeiro.');
+      custom.focus();
+      return;
+    }
+    show(message);
+  });
+
+  groups.replaceChildren(
+    ...Object.entries(PHRASE_GROUPS)
+      .map(([key, title]) => {
+        const phrases = state.phrases.filter((p) => p.category === key);
+        if (!phrases.length) return null;
+        return el(
+          'section',
+          { 'aria-labelledby': `pg-${key}` },
+          el('h2', { id: `pg-${key}`, text: title }),
+          el(
+            'ul',
+            { class: 'grid phrase-grid' },
+            ...phrases.map((phrase) =>
+              el(
+                'li',
+                {},
+                el(
+                  'button',
+                  { type: 'button', class: `phrase-btn${phrase.urgent ? ' urgent' : ''}`, onclick: () => show(phrase.text) },
+                  phrase.urgent ? el('span', { class: 'phrase-tag', text: 'Urgente' }) : null,
+                  el('span', { text: phrase.text })
+                )
+              )
+            )
+          )
+        );
+      })
+      .filter(Boolean)
+  );
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/data.js
+================================================================
+// Gerado por backend/scripts/build.js a partir de backend/data/seed.json. Não edite à mão.
+export const OFFLINE_DATA = {
+  "categories": [
+    {
+      "id": "saudacoes",
+      "name": "Saudações",
+      "icon": "👋"
+    },
+    {
+      "id": "basico",
+      "name": "Básico",
+      "icon": "💬"
+    },
+    {
+      "id": "saude",
+      "name": "Saúde e emergência",
+      "icon": "🚑"
+    },
+    {
+      "id": "casa",
+      "name": "Casa e família",
+      "icon": "🏠"
+    },
+    {
+      "id": "alimentos",
+      "name": "Comida e bebida",
+      "icon": "🍽️"
+    }
+  ],
+  "signs": [
+    {
+      "id": "oi",
+      "word": "Oi / Olá",
+      "category": "saudacoes",
+      "emoji": "👋",
+      "description": "Mão aberta perto da lateral da cabeça, com um pequeno aceno para fora.",
+      "tip": "Acompanhe com expressão facial amigável e contato visual.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "bom-dia",
+      "word": "Bom dia",
+      "category": "saudacoes",
+      "emoji": "🌅",
+      "description": "Sinal composto: BOM seguido de DIA.",
+      "tip": "Em Libras, a expressão facial faz parte do sinal.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "boa-tarde",
+      "word": "Boa tarde",
+      "category": "saudacoes",
+      "emoji": "🌇",
+      "description": "Sinal composto: BOM seguido de TARDE.",
+      "tip": "Mantenha o mesmo ritmo e expressão do cumprimento anterior.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "boa-noite",
+      "word": "Boa noite",
+      "category": "saudacoes",
+      "emoji": "🌙",
+      "description": "Sinal composto: BOM seguido de NOITE.",
+      "tip": "Serve para cumprimentar e para se despedir à noite.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "tchau",
+      "word": "Tchau",
+      "category": "saudacoes",
+      "emoji": "🙋",
+      "description": "Mão aberta com movimento de aceno de despedida.",
+      "tip": "O aceno é visível de longe, bom para chamar atenção.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "obrigado",
+      "word": "Obrigado(a)",
+      "category": "basico",
+      "emoji": "🙏",
+      "description": "Mão aberta toca perto do queixo e se afasta para frente.",
+      "tip": "O mesmo sinal vale para obrigado e obrigada.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "por-favor",
+      "word": "Por favor",
+      "category": "basico",
+      "emoji": "🤲",
+      "description": "Mão aberta sobre o peito, com movimento circular.",
+      "tip": "Use expressão gentil, ela muda o tom do pedido.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "desculpa",
+      "word": "Desculpa",
+      "category": "basico",
+      "emoji": "😔",
+      "description": "Movimento junto ao peito que expressa pedido de desculpas.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "sim",
+      "word": "Sim",
+      "category": "basico",
+      "emoji": "✅",
+      "description": "Mão fechada balança para baixo e para cima, como um aceno de cabeça.",
+      "tip": "Acompanhe com um aceno de cabeça.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "nao",
+      "word": "Não",
+      "category": "basico",
+      "emoji": "❌",
+      "description": "Dedo indicador balança de um lado para o outro.",
+      "tip": "Acompanhe com um aceno de cabeça negativo.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "amigo",
+      "word": "Amigo(a)",
+      "category": "basico",
+      "emoji": "🤝",
+      "description": "As duas mãos se encontram à frente do corpo, indicando união.",
+      "tip": "Confirme a forma exata das mãos com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "onde",
+      "word": "Onde?",
+      "category": "basico",
+      "emoji": "❓",
+      "description": "Sinal de pergunta feito com a mão, acompanhado de expressão interrogativa.",
+      "tip": "Perguntas em Libras usam sobrancelhas franzidas e cabeça levemente inclinada.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "banheiro",
+      "word": "Banheiro",
+      "category": "basico",
+      "emoji": "🚻",
+      "description": "Sinal próprio para BANHEIRO, feito perto do corpo.",
+      "tip": "Adicione o vídeo do sinal validado para este item.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "ajuda",
+      "word": "Ajuda",
+      "category": "saude",
+      "emoji": "🆘",
+      "description": "Uma mão apoia a outra por baixo e ambas se movem para cima.",
+      "tip": "Em emergência, combine com expressão de urgência.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "medico",
+      "word": "Médico(a)",
+      "category": "saude",
+      "emoji": "🩺",
+      "description": "Dedos tocam o pulso, lembrando a verificação do pulso.",
+      "tip": "Vale para médico e médica.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "hospital",
+      "word": "Hospital",
+      "category": "saude",
+      "emoji": "🏥",
+      "description": "Sinal que remete a MÉDICO e a um local de atendimento.",
+      "tip": "Adicione o vídeo validado para mostrar a forma correta.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "emergencia",
+      "word": "Emergência",
+      "category": "saude",
+      "emoji": "🚨",
+      "description": "Sinal rápido e enfático, com expressão de urgência.",
+      "tip": "No Brasil: SAMU 192, Bombeiros 193, Polícia 190.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "dor",
+      "word": "Dor",
+      "category": "saude",
+      "emoji": "🤕",
+      "description": "Dedos indicadores se movem em direções opostas perto do local da dor.",
+      "tip": "Aponte o local do corpo onde dói.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "casa",
+      "word": "Casa",
+      "category": "casa",
+      "emoji": "🏠",
+      "description": "As duas mãos formam o telhado de uma casa.",
+      "tip": "O desenho do telhado ajuda a memorizar o sinal.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "familia",
+      "word": "Família",
+      "category": "casa",
+      "emoji": "👨‍👩‍👧",
+      "description": "Mãos desenham um círculo à frente do corpo, indicando um grupo unido.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "bebe",
+      "word": "Bebê",
+      "category": "casa",
+      "emoji": "👶",
+      "description": "Os braços embalam um bebê imaginário.",
+      "tip": "Sinal icônico: imita o gesto de embalar.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "agua",
+      "word": "Água",
+      "category": "alimentos",
+      "emoji": "💧",
+      "description": "Movimento junto à boca que remete a água.",
+      "tip": "Confirme a configuração de mão com um instrutor de Libras.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "comer",
+      "word": "Comer",
+      "category": "alimentos",
+      "emoji": "🍽️",
+      "description": "Dedos juntos são levados à boca repetidamente.",
+      "tip": "Também pode significar comida, dependendo do contexto.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "beber",
+      "word": "Beber",
+      "category": "alimentos",
+      "emoji": "🥤",
+      "description": "A mão em formato de copo é levada à boca e inclina como se bebesse.",
+      "tip": "Sinal icônico: imita o gesto de beber.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    },
+    {
+      "id": "cafe",
+      "word": "Café",
+      "category": "alimentos",
+      "emoji": "☕",
+      "description": "Uma mão fechada gira ao lado da outra, como moer café.",
+      "tip": "O movimento imita um moedor manual.",
+      "videoUrl": null,
+      "imageUrl": null,
+      "validated": false
+    }
+  ],
+  "lessons": [
+    {
+      "id": "licao-saudacoes",
+      "title": "Saudações",
+      "description": "Cumprimentos para começar e encerrar uma conversa.",
+      "signIds": [
+        "oi",
+        "bom-dia",
+        "boa-tarde",
+        "boa-noite",
+        "tchau"
+      ]
+    },
+    {
+      "id": "licao-basico",
+      "title": "Educação e respostas",
+      "description": "Agradecer, pedir desculpas e responder sim ou não.",
+      "signIds": [
+        "obrigado",
+        "por-favor",
+        "desculpa",
+        "sim",
+        "nao"
+      ]
+    },
+    {
+      "id": "licao-saude",
+      "title": "Saúde e emergência",
+      "description": "Sinais para pedir ajuda e falar de saúde.",
+      "signIds": [
+        "ajuda",
+        "medico",
+        "hospital",
+        "emergencia",
+        "dor"
+      ]
+    },
+    {
+      "id": "licao-casa",
+      "title": "Casa e família",
+      "description": "Pessoas e lugares do dia a dia.",
+      "signIds": [
+        "casa",
+        "familia",
+        "bebe",
+        "amigo"
+      ]
+    },
+    {
+      "id": "licao-alimentos",
+      "title": "Comida e bebida",
+      "description": "Pedir e falar sobre alimentos e bebidas.",
+      "signIds": [
+        "agua",
+        "comer",
+        "beber",
+        "cafe"
+      ]
+    }
+  ],
+  "phrases": [
+    {
+      "id": "f-ola",
+      "text": "Olá! Tudo bem?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-bomdia",
+      "text": "Bom dia! Boa tarde! Boa noite!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-nome",
+      "text": "Meu nome é…",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-prazer",
+      "text": "Prazer em conhecer!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-licenca",
+      "text": "Com licença.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-desculpa",
+      "text": "Desculpa.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-repetir",
+      "text": "Pode repetir, por favor?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-devagar",
+      "text": "Mais devagar, por favor.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-entendi",
+      "text": "Entendi.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-nao-entendi",
+      "text": "Não entendi.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-espera",
+      "text": "Espera um pouco.",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-onde",
+      "text": "Fica onde? É perto?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-custa",
+      "text": "Quanto custa?",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "f-ajuda",
+      "text": "Preciso de ajuda.",
+      "category": "frequentes",
+      "urgent": true
+    },
+    {
+      "id": "f-tchau",
+      "text": "Tchau! Até mais!",
+      "category": "frequentes",
+      "urgent": false
+    },
+    {
+      "id": "p-surdo",
+      "text": "Sou surdo(a). Por favor, escreva ou digite no celular para conversarmos.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-devagar",
+      "text": "Fale devagar e de frente para mim, por favor.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-interprete",
+      "text": "Preciso de um intérprete de Libras.",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-escrever",
+      "text": "Você pode escrever, por favor?",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-repetir",
+      "text": "Não entendi. Pode repetir por escrito?",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-obrigado",
+      "text": "Muito obrigado(a)!",
+      "category": "essencial",
+      "urgent": false
+    },
+    {
+      "id": "p-medico",
+      "text": "Preciso de atendimento médico.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-ambulancia",
+      "text": "Chame uma ambulância, por favor.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-dor",
+      "text": "Estou com dor. Preciso de ajuda.",
+      "category": "saude",
+      "urgent": true
+    },
+    {
+      "id": "p-alergia",
+      "text": "Tenho alergia. Preciso avisar a equipe de saúde.",
+      "category": "saude",
+      "urgent": false
+    },
+    {
+      "id": "p-banheiro",
+      "text": "Onde fica o banheiro?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-preco",
+      "text": "Quanto custa? Pode digitar o valor?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-ajuda",
+      "text": "Pode me ajudar, por favor?",
+      "category": "cotidiano",
+      "urgent": false
+    },
+    {
+      "id": "p-saida",
+      "text": "Onde fica a saída?",
+      "category": "cotidiano",
+      "urgent": false
+    }
+  ]
+};
+
+
+================================================================
+// ARQUIVO: frontend/js/dictionary.js
+================================================================
+import { $, el, normalize, debounce, openDialog, closeDialog, wireDialog, safeUrl } from './ui.js';
+import { state, on, emit, toggleFavorite, categoryName, signById } from './state.js';
+
+let dictCategory = 'todos';
+
+const favLabel = (sign, isFavorite) => (isFavorite ? `Remover ${sign.word} dos favoritos` : `Adicionar ${sign.word} aos favoritos`);
+
+/** Botão de estrela dos cartões. */
+function favIconButton(sign) {
+  const isFavorite = state.favorites.has(sign.id);
+  return el(
+    'button',
+    {
+      type: 'button',
+      class: 'fav-btn',
+      'data-fav': sign.id,
+      'aria-pressed': String(isFavorite),
+      'aria-label': favLabel(sign, isFavorite),
+      onclick: () => toggleFavorite(sign.id)
+    },
+    el('span', { 'aria-hidden': 'true', text: isFavorite ? '★' : '☆' })
+  );
+}
+
+/** Botão de texto do diálogo de detalhes. */
+function favTextButton(sign) {
+  const isFavorite = state.favorites.has(sign.id);
+  return el('button', {
+    type: 'button',
+    class: 'btn',
+    'data-favtext': sign.id,
+    'aria-pressed': String(isFavorite),
+    onclick: () => toggleFavorite(sign.id),
+    text: isFavorite ? '★ Nos favoritos' : '☆ Favoritar'
+  });
+}
+
+/** Atualiza todos os botões de favorito visíveis. */
+function syncFavButtons() {
+  document.querySelectorAll('[data-fav]').forEach((button) => {
+    const sign = signById(button.dataset.fav);
+    if (!sign) return;
+    const isFavorite = state.favorites.has(sign.id);
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.setAttribute('aria-label', favLabel(sign, isFavorite));
+    button.firstChild.textContent = isFavorite ? '★' : '☆';
+  });
+  document.querySelectorAll('[data-favtext]').forEach((button) => {
+    const isFavorite = state.favorites.has(button.dataset.favtext);
+    button.setAttribute('aria-pressed', String(isFavorite));
+    button.textContent = isFavorite ? '★ Nos favoritos' : '☆ Favoritar';
+  });
+}
+
+export function signCard(sign) {
+  return el(
+    'li',
+    { class: 'sign-card' },
+    el(
+      'button',
+      { type: 'button', class: 'sign-open', onclick: () => openSignDialog(sign.id) },
+      el('span', { class: 'sign-emoji', 'aria-hidden': 'true', text: sign.emoji ?? '' }),
+      el('span', { class: 'sign-word', text: sign.word }),
+      el('span', { class: 'sign-cat', text: categoryName(sign.category) })
+    ),
+    favIconButton(sign)
+  );
+}
+
+function buildSignMedia(sign) {
+  const video = safeUrl(sign.videoUrl);
+  const image = safeUrl(sign.imageUrl);
+
+  if (video) {
+    const player = el('video', {
+      controls: true,
+      playsinline: true,
+      preload: 'metadata',
+      src: video,
+      'aria-label': `Vídeo do sinal ${sign.word}`
+    });
+    const slow = el('button', {
+      type: 'button',
+      class: 'btn',
+      'aria-pressed': 'false',
+      text: 'Ver em câmera lenta',
+      onclick: (event) => {
+        const enable = player.playbackRate !== 0.5;
+        player.playbackRate = enable ? 0.5 : 1;
+        event.currentTarget.setAttribute('aria-pressed', String(enable));
+        event.currentTarget.textContent = enable ? 'Câmera lenta ligada' : 'Ver em câmera lenta';
+      }
+    });
+    return el('div', { class: 'sign-media' }, player, slow);
+  }
+  if (image) {
+    return el('div', { class: 'sign-media' }, el('img', { src: image, alt: `Sinal de ${sign.word} em Libras` }));
+  }
+  return el(
+    'div',
+    { class: 'sign-media' },
+    el('span', { class: 'big', 'aria-hidden': 'true', text: sign.emoji ?? '' }),
+    el('p', { class: 'muted', text: 'O vídeo deste sinal ainda não foi adicionado.' })
+  );
+}
+
+export function openSignDialog(id) {
+  const sign = signById(id);
+  if (!sign) return;
+  const dialog = $('#sign-dialog');
+  $('#sign-title').textContent = sign.word;
+
+  $('#sign-body').replaceChildren(
+    buildSignMedia(sign),
+    el('p', {}, el('span', { class: `badge ${sign.validated ? 'ok' : 'warn'}`, text: sign.validated ? 'Revisado por intérprete' : 'Exemplo, ainda sem revisão' })),
+    el('h3', { text: 'Como fazer' }),
+    el('p', { text: sign.description }),
+    sign.tip ? el('p', { class: 'muted', text: `Dica: ${sign.tip}` }) : null,
+    el('p', { class: 'muted', text: `Categoria: ${categoryName(sign.category)}` }),
+    el(
+      'div',
+      { class: 'btn-row' },
+      favTextButton(sign),
+      el('button', {
+        type: 'button',
+        class: 'btn',
+        text: 'Ver soletração',
+        onclick: () => {
+          closeDialog(dialog);
+          emit('spell', sign.word);
+          location.hash = '#alfabeto';
+        }
+      })
+    )
+  );
+  openDialog(dialog);
+}
+
+export function initDictionary() {
+  const input = $('#dict-search');
+  const chips = $('#dict-chips');
+  const grid = $('#dict-grid');
+  const status = $('#dict-status');
+  const empty = $('#dict-empty');
+
+  wireDialog($('#sign-dialog'));
+
+  const filters = [{ id: 'todos', name: 'Todos' }, { id: 'favoritos', name: 'Favoritos' }, ...state.categories];
+  chips.replaceChildren(
+    ...filters.map((filter) =>
+      el('button', {
+        type: 'button',
+        class: 'chip-btn',
+        'data-filter': filter.id,
+        'aria-pressed': String(filter.id === dictCategory),
+        text: filter.name,
+        onclick: () => {
+          dictCategory = filter.id;
+          chips.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.filter === dictCategory)));
+          render();
+        }
+      })
+    )
+  );
+
+  function matches(sign) {
+    if (dictCategory === 'favoritos' && !state.favorites.has(sign.id)) return false;
+    if (dictCategory !== 'todos' && dictCategory !== 'favoritos' && sign.category !== dictCategory) return false;
+    const term = normalize(input.value);
+    return !term || normalize(`${sign.word} ${sign.description} ${categoryName(sign.category)}`).includes(term);
+  }
+
+  function render() {
+    const list = state.signs.filter(matches).sort((a, b) => a.word.localeCompare(b.word, 'pt-BR'));
+    grid.replaceChildren(...list.map(signCard));
+    empty.hidden = list.length > 0;
+    status.textContent = list.length === 1 ? '1 sinal encontrado' : `${list.length} sinais encontrados`;
+  }
+
+  input.addEventListener('input', debounce(render, 200));
+  on('favorites', () => {
+    syncFavButtons();
+    if (dictCategory === 'favoritos') {
+      render();
+      input.focus();
+    }
+  });
+  render();
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/learn.js
+================================================================
+import { $, el, shuffle, announce } from './ui.js';
+import { state, on, emit, signById } from './state.js';
+import { api } from './api.js';
+
+export function initLearn() {
+  const list = $('#lesson-list');
+  const panel = $('#lessons-panel');
+  const quizEl = $('#quiz');
+  let quiz = null; // { lesson, questions, index, score }
+
+  function bestFor(lessonId) {
+    const tries = state.attempts.filter((a) => a.lessonId === lessonId);
+    if (!tries.length) return null;
+    return tries.reduce((best, a) => (a.score / a.total > best.score / best.total ? a : best));
+  }
+
+  function renderLessons() {
+    list.replaceChildren(
+      ...state.lessons.map((lesson) => {
+        const best = bestFor(lesson.id);
+        return el(
+          'li',
+          { class: 'lesson-card' },
+          el('h2', { text: lesson.title }),
+          el('p', { text: lesson.description }),
+          el(
+            'p',
+            {},
+            el('span', { class: 'badge', text: `${lesson.signIds.length} sinais` }),
+            ' ',
+            best
+              ? el('span', { class: 'badge ok', text: `Melhor: ${best.score} de ${best.total}` })
+              : el('span', { class: 'badge', text: 'Ainda não praticada' })
+          ),
+          el('button', {
+            type: 'button',
+            class: 'btn btn-primary',
+            'aria-label': `${best ? 'Praticar de novo' : 'Começar'} a lição ${lesson.title}`,
+            text: best ? 'Praticar de novo' : 'Começar',
+            onclick: () => startLesson(lesson)
+          })
+        );
+      })
+    );
+  }
+
+  function buildQuestions(lesson) {
+    const lessonSigns = lesson.signIds.map(signById).filter(Boolean);
+    return shuffle(lessonSigns).map((sign) => {
+      const others = shuffle(state.signs.filter((s) => s.id !== sign.id));
+      const distractors = [...others.filter((s) => s.category === sign.category), ...others.filter((s) => s.category !== sign.category)].slice(0, 3);
+      return { sign, options: shuffle([sign, ...distractors]) };
+    });
+  }
+
+  function showQuiz(show) {
+    panel.hidden = show;
+    quizEl.hidden = !show;
+  }
+
+  function backToLessons() {
+    quiz = null;
+    renderLessons();
+    showQuiz(false);
+    $('#h-apr').focus();
+  }
+
+  function startLesson(lesson) {
+    const questions = buildQuestions(lesson);
+    if (questions.length === 0) return;
+    quiz = { lesson, questions, index: 0, score: 0 };
+    showQuiz(true);
+    renderQuestion();
+  }
+
+  function renderQuestion() {
+    const question = quiz.questions[quiz.index];
+    const total = quiz.questions.length;
+
+    const legend = el('legend', { tabindex: '-1', text: `Pergunta ${quiz.index + 1} de ${total}: qual palavra combina com esta descrição?` });
+    const feedback = el('p', { class: 'feedback', role: 'status' });
+    const submit = el('button', { type: 'submit', class: 'btn btn-primary', text: 'Responder' });
+
+    const options = el(
+      'div',
+      { class: 'options' },
+      ...question.options.map((option) =>
+        el(
+          'label',
+          { class: 'option', dataset: { id: option.id } },
+          el('input', { type: 'radio', name: 'answer', value: option.id }),
+          el('span', { text: option.word }),
+          el('span', { class: 'mark', 'aria-hidden': 'true' })
+        )
+      )
+    );
+
+    const form = el(
+      'form',
+      { class: 'quiz-box', novalidate: true },
+      el('fieldset', {}, legend, el('p', { class: 'prompt', text: question.sign.description }), options),
+      feedback,
+      el('div', { class: 'btn-row' }, submit, el('button', { type: 'button', class: 'btn', text: 'Sair da lição', onclick: backToLessons }))
+    );
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const chosen = form.querySelector('input[name="answer"]:checked');
+      if (!chosen) {
+        feedback.textContent = 'Escolha uma opção antes de responder.';
+        return;
+      }
+      const correct = chosen.value === question.sign.id;
+      if (correct) quiz.score += 1;
+
+      form.querySelectorAll('.option').forEach((label) => {
+        label.querySelector('input').disabled = true;
+        const mark = label.querySelector('.mark');
+        if (label.dataset.id === question.sign.id) {
+          label.classList.add('correct');
+          mark.textContent = '✔ Correta';
+        } else if (label.dataset.id === chosen.value) {
+          label.classList.add('wrong');
+          mark.textContent = '✖ Sua resposta';
+        }
+      });
+      feedback.textContent = correct ? 'Correto! Muito bem.' : `Quase. A resposta certa é “${question.sign.word}”.`;
+
+      const isLast = quiz.index === total - 1;
+      const nextButton = el('button', {
+        type: 'button',
+        class: 'btn btn-primary',
+        text: isLast ? 'Ver resultado' : 'Próxima pergunta',
+        onclick: () => {
+          quiz.index += 1;
+          if (isLast) finishQuiz();
+          else renderQuestion();
+        }
+      });
+      submit.replaceWith(nextButton);
+      nextButton.focus();
+    });
+
+    quizEl.replaceChildren(
+      el('div', { class: 'quiz-head' }, el('h2', { text: quiz.lesson.title }), el('p', { class: 'muted', text: `Acertos até agora: ${quiz.score}` })),
+      form
+    );
+    legend.focus();
+  }
+
+  async function finishQuiz() {
+    const { lesson, score, questions } = quiz;
+    const total = questions.length;
+    const record = await api.saveAttempt({ lessonId: lesson.id, score, total });
+    state.attempts.unshift(record);
+    emit('progress');
+
+    const ratio = score / total;
+    const message =
+      ratio === 1
+        ? 'Perfeito! Você acertou todas.'
+        : ratio >= 0.6
+          ? 'Bom trabalho! Revise os sinais que errou e tente de novo.'
+          : 'Continue praticando. Abra o dicionário para rever os sinais desta lição.';
+
+    quizEl.replaceChildren(
+      el(
+        'div',
+        { class: 'quiz-box' },
+        el('h2', { id: 'quiz-result', tabindex: '-1', text: `Resultado: ${lesson.title}` }),
+        el('p', { class: 'result-score', text: `${score} de ${total}` }),
+        el('p', { text: message }),
+        el(
+          'div',
+          { class: 'btn-row' },
+          el('button', { type: 'button', class: 'btn btn-primary', text: 'Tentar de novo', onclick: () => startLesson(lesson) }),
+          el('button', { type: 'button', class: 'btn', text: 'Voltar às lições', onclick: backToLessons })
+        )
+      )
+    );
+    $('#quiz-result').focus();
+    announce(`Lição concluída: ${score} de ${total}.`);
+  }
+
+  on('progress', renderLessons);
+  renderLessons();
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/progress.js
+================================================================
+import { $, el } from './ui.js';
+import { state, on, emit, signById } from './state.js';
+import { api } from './api.js';
+import { signCard } from './dictionary.js';
+
+export function initProgress() {
+  const stats = $('#stats');
+  const favList = $('#fav-list');
+  const favEmpty = $('#fav-empty');
+  const rows = $('#attempt-rows');
+
+  const stat = (label, value) => el('div', { class: 'stat' }, el('dt', { text: label }), el('dd', { text: String(value) }));
+
+  function bestOf(lessonId) {
+    const tries = state.attempts.filter((a) => a.lessonId === lessonId);
+    if (!tries.length) return { best: null, count: 0 };
+    return { best: tries.reduce((b, a) => (a.score / a.total > b.score / b.total ? a : b)), count: tries.length };
+  }
+
+  function render() {
+    const summaries = state.lessons.map((lesson) => ({ lesson, ...bestOf(lesson.id) }));
+    const practiced = summaries.filter((s) => s.best);
+    const average = practiced.length ? Math.round((practiced.reduce((sum, s) => sum + s.best.score / s.best.total, 0) / practiced.length) * 100) : null;
+
+    stats.replaceChildren(
+      stat('Sinais favoritos', state.favorites.size),
+      stat('Lições praticadas', `${practiced.length} de ${state.lessons.length}`),
+      stat('Média das melhores notas', average === null ? '—' : `${average}%`),
+      stat('Tentativas', state.attempts.length)
+    );
+
+    const favorites = [...state.favorites].map(signById).filter(Boolean).sort((a, b) => a.word.localeCompare(b.word, 'pt-BR'));
+    favList.replaceChildren(...favorites.map(signCard));
+    favEmpty.hidden = favorites.length > 0;
+
+    rows.replaceChildren(
+      ...summaries.map(({ lesson, best, count }) =>
+        el('tr', {}, el('th', { scope: 'row', text: lesson.title }), el('td', { text: best ? `${best.score} de ${best.total}` : '—' }), el('td', { text: String(count) }))
+      )
+    );
+  }
+
+  on('progress', render);
+  on('favorites', render);
+  render();
+
+  // Sugestões
+  const form = $('#feedback-form');
+  const message = $('#fb-message');
+  const contact = $('#fb-contact');
+  const fbStatus = $('#fb-status');
+  const setFbStatus = (text, kind) => {
+    fbStatus.textContent = text;
+    fbStatus.className = `form-status${kind ? ` is-${kind}` : ''}`;
+  };
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const text = message.value.trim();
+    if (text.length < 3) {
+      setFbStatus('Escreva uma mensagem com pelo menos 3 letras.', 'error');
+      message.focus();
+      return;
+    }
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    try {
+      await api.sendFeedback({ message: text, contact: contact.value.trim() || undefined });
+      setFbStatus('Obrigado! Sua mensagem foi enviada.', 'ok');
+      form.reset();
+    } catch {
+      setFbStatus('Não foi possível enviar agora. Verifique a conexão com o servidor e tente de novo.', 'error');
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  // Apagar dados (confirmação em dois toques, sem janelas do navegador)
+  const reset = $('#reset-data');
+  const resetStatus = $('#reset-status');
+  let armed = null;
+  reset.addEventListener('click', async () => {
+    if (!armed) {
+      reset.textContent = 'Toque de novo para confirmar';
+      armed = setTimeout(() => {
+        armed = null;
+        reset.textContent = 'Apagar meus dados';
+      }, 5000);
+      return;
+    }
+    clearTimeout(armed);
+    armed = null;
+    reset.textContent = 'Apagar meus dados';
+    const { server } = await api.deleteMyData();
+    state.favorites = new Set();
+    state.attempts = [];
+    emit('favorites', {});
+    emit('progress');
+    resetStatus.className = 'form-status is-ok';
+    resetStatus.textContent = server ? 'Seus dados foram apagados neste aparelho e no servidor.' : 'Seus dados foram apagados neste aparelho. Não foi possível apagar no servidor agora.';
+  });
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/router.js
+================================================================
+import { $, $$, announce } from './ui.js';
+import { emit } from './state.js';
+
+const VIEWS = {
+  inicio: 'Início',
+  dicionario: 'Dicionário',
+  alfabeto: 'Alfabeto',
+  aprender: 'Aprender',
+  comunicar: 'Comunicar',
+  legendas: 'Legendas ao vivo',
+  alerta: 'Alerta de som',
+  progresso: 'Meu progresso'
+};
+
+let firstNavigation = true;
+
+function navigate() {
+  const requested = location.hash.replace('#', '');
+  const view = Object.hasOwn(VIEWS, requested) ? requested : 'inicio';
+
+  $$('[data-view]').forEach((section) => {
+    section.hidden = section.dataset.view !== view;
+  });
+  $$('.main-nav a').forEach((link) => {
+    if (link.getAttribute('href') === `#${view}`) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
+  });
+  document.title = `${VIEWS[view]} · Libras Acesso`;
+  window.scrollTo(0, 0);
+
+  // Depois da primeira carga, leva o foco para o título da nova página.
+  if (!firstNavigation) {
+    $(`[data-view="${view}"] h1`)?.focus();
+    announce(`Página ${VIEWS[view]}`);
+  }
+  firstNavigation = false;
+  emit('route', view);
+}
+
+export function initRouter() {
+  window.addEventListener('hashchange', navigate);
+  navigate();
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/soundalert.js
+================================================================
+import { $, el, formatTime, vibrate, prefersReducedMotion } from './ui.js';
+
+let toastTimer;
+
+/** Aviso visual grande, tela piscando (suave) e vibração. */
+export function fireAlert(message) {
+  const toast = $('#alert-toast');
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toast.hidden = true;
+  }, 7000);
+
+  const flash = $('#flash');
+  if (!prefersReducedMotion() && document.documentElement.dataset.flash !== 'off') {
+    flash.classList.remove('on');
+    void flash.offsetWidth; // reinicia a animação
+    flash.classList.add('on');
+  }
+  vibrate([300, 120, 300, 120, 300]);
+}
+
+export function initSoundAlert() {
+  const startButton = $('#snd-start');
+  const testButton = $('#snd-test');
+  const range = $('#snd-threshold');
+  const rangeOut = $('#snd-threshold-out');
+  const meter = $('#snd-meter');
+  const fill = $('#snd-fill');
+  const mark = $('#snd-mark');
+  const status = $('#snd-status');
+  const history = $('#snd-history');
+  const chip = $('#alert-chip');
+
+  let stream = null;
+  let audioContext = null;
+  let analyser = null;
+  let samples = null;
+  let timer = null;
+  let lastFire = 0;
+  let lastAria = 0;
+  let eventCount = 0;
+  let threshold = Number(range.value);
+
+  const setStatus = (message) => {
+    status.textContent = message;
+  };
+
+  function syncThreshold() {
+    threshold = Number(range.value);
+    mark.style.left = `${threshold}%`;
+    rangeOut.textContent = `${threshold}%`;
+  }
+  syncThreshold();
+  range.addEventListener('input', syncThreshold);
+
+  $('#flash').addEventListener('animationend', (event) => event.currentTarget.classList.remove('on'));
+
+  function addHistory(message) {
+    if (eventCount === 0) history.replaceChildren();
+    eventCount += 1;
+    history.prepend(el('li', { text: `${formatTime()}: ${message}` }));
+    while (history.children.length > 20) history.lastChild.remove();
+  }
+
+  function sample() {
+    analyser.getByteTimeDomainData(samples);
+    let sum = 0;
+    for (let i = 0; i < samples.length; i++) {
+      const v = (samples[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / samples.length);
+    const db = 20 * Math.log10(Math.max(rms, 1e-5));
+    const level = Math.max(0, Math.min(100, Math.round(((db + 60) / 60) * 100))); // -60 dB = 0%, 0 dB = 100%
+    fill.style.width = `${level}%`;
+
+    const now = Date.now();
+    if (now - lastAria > 500) {
+      meter.setAttribute('aria-valuenow', String(level));
+      lastAria = now;
+    }
+    if (level >= threshold && now - lastFire > 3000) {
+      lastFire = now;
+      const message = `Som alto detectado às ${formatTime()}`;
+      fireAlert(message);
+      addHistory('som alto detectado.');
+    }
+  }
+
+  async function start() {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setStatus('Este navegador não permite usar o microfone. No celular, abra o app por uma conexão segura (https).');
+      return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (error) {
+      setStatus(
+        error?.name === 'NotAllowedError'
+          ? 'O acesso ao microfone foi negado. Libere a permissão nas configurações do navegador.'
+          : 'Não foi possível acessar o microfone.'
+      );
+      return;
+    }
+    const AudioContextApi = window.AudioContext || window.webkitAudioContext;
+    audioContext = new AudioContextApi();
+    if (audioContext.state === 'suspended') await audioContext.resume();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    audioContext.createMediaStreamSource(stream).connect(analyser);
+    samples = new Uint8Array(analyser.fftSize);
+
+    timer = setInterval(sample, 100);
+    startButton.textContent = 'Desativar alerta';
+    startButton.setAttribute('aria-pressed', 'true');
+    chip.hidden = false;
+    setStatus('Alerta ativo. Mantenha esta página aberta e a tela ligada.');
+  }
+
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+    stream?.getTracks().forEach((track) => track.stop());
+    audioContext?.close?.();
+    stream = null;
+    audioContext = null;
+    fill.style.width = '0%';
+    meter.setAttribute('aria-valuenow', '0');
+    startButton.textContent = 'Ativar alerta';
+    startButton.setAttribute('aria-pressed', 'false');
+    chip.hidden = true;
+    setStatus('O alerta está desligado.');
+  }
+
+  startButton.addEventListener('click', () => (timer ? stop() : start()));
+  testButton.addEventListener('click', () => {
+    fireAlert('Teste: assim será o aviso de som.');
+    addHistory('teste do aviso.');
+  });
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/state.js
+================================================================
+import { api } from './api.js';
+import { announce } from './ui.js';
+
+// Estado compartilhado entre as telas.
+export const state = {
+  signs: [],
+  categories: [],
+  lessons: [],
+  phrases: [],
+  favorites: new Set(),
+  attempts: [],
+  source: 'offline'
+};
+
+const bus = new EventTarget();
+export const emit = (name, detail) => bus.dispatchEvent(new CustomEvent(name, { detail }));
+export const on = (name, handler) => bus.addEventListener(name, (event) => handler(event.detail));
+
+export const categoryName = (id) => state.categories.find((c) => c.id === id)?.name ?? id;
+export const signById = (id) => state.signs.find((s) => s.id === id);
+
+export async function toggleFavorite(signId) {
+  const nowFavorite = !state.favorites.has(signId);
+  if (nowFavorite) state.favorites.add(signId);
+  else state.favorites.delete(signId);
+  announce(nowFavorite ? 'Adicionado aos favoritos.' : 'Removido dos favoritos.');
+  emit('favorites', { signId, nowFavorite });
+  await api.setFavorite(signId, nowFavorite);
+  return nowFavorite;
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/storage.js
+================================================================
+// Armazenamento local seguro: se o navegador bloquear o localStorage, usa a memória.
+const mem = new Map();
+const PREFIX = 'libras-acesso:';
+
+export const storage = {
+  get(key, fallback = null) {
+    try {
+      const raw = localStorage.getItem(PREFIX + key);
+      if (raw !== null) return JSON.parse(raw);
+    } catch {
+      /* armazenamento indisponível */
+    }
+    return mem.has(key) ? mem.get(key) : fallback;
+  },
+  set(key, value) {
+    mem.set(key, value);
+    try {
+      localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    } catch {
+      /* armazenamento indisponível */
+    }
+  },
+  remove(key) {
+    mem.delete(key);
+    try {
+      localStorage.removeItem(PREFIX + key);
+    } catch {
+      /* armazenamento indisponível */
+    }
+  }
+};
+
+/** Código anônimo deste aparelho (não identifica a pessoa). */
+export function getUserId() {
+  let id = storage.get('userId');
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : `u-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+    storage.set('userId', id);
+  }
+  return id;
+}
+
+
+================================================================
+// ARQUIVO: frontend/js/ui.js
+================================================================
+// Utilitários de interface.
+export const $ = (selector, root = document) => root.querySelector(selector);
+export const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+/** Cria um elemento. Textos entram como texto (nunca como HTML), o que evita XSS. */
+export function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs)) {
+    if (value === false || value == null) continue;
+    if (key === 'class') node.className = value;
+    else if (key === 'text') node.textContent = value;
+    else if (key === 'dataset') Object.assign(node.dataset, value);
+    else if (key.startsWith('on') && typeof value === 'function') node.addEventListener(key.slice(2).toLowerCase(), value);
+    else node.setAttribute(key, value === true ? '' : value);
+  }
+  for (const child of children.flat()) {
+    if (child == null || child === false) continue;
+    node.append(child.nodeType ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+let liveTimer;
+/** Anuncia uma mensagem para leitores de tela. */
+export function announce(message, { assertive = false } = {}) {
+  const region = $(assertive ? '#live-assertive' : '#live-polite');
+  if (!region) return;
+  clearTimeout(liveTimer);
+  region.textContent = '';
+  liveTimer = setTimeout(() => {
+    region.textContent = message;
+  }, 60);
+}
+
+/** Minúsculas e sem acentos, para busca. */
+export function normalize(text) {
+  return String(text ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+export function formatTime(date = new Date()) {
+  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+export function debounce(fn, ms = 200) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+export function shuffle(list) {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+export function prefersReducedMotion() {
+  return document.documentElement.dataset.motion === 'reduce' || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+export function vibrate(pattern) {
+  if (document.documentElement.dataset.vibrate === 'off') return;
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* vibração indisponível */
+  }
+}
+
+/** Aceita só endereços http(s) ou relativos. Evita "javascript:" vindo do banco de dados. */
+export function safeUrl(url) {
+  return typeof url === 'string' && /^(https?:\/\/|\/(?!\/))/i.test(url) ? url : null;
+}
+
+export function openDialog(dialog) {
+  if (typeof dialog.showModal === 'function') {
+    if (!dialog.open) dialog.showModal();
+  } else {
+    dialog.setAttribute('open', '');
+  }
+}
+
+export function closeDialog(dialog) {
+  if (typeof dialog.close === 'function') dialog.close();
+  else dialog.removeAttribute('open');
+}
+
+/** Liga os botões [data-close] e o clique no fundo ao fechamento do diálogo. */
+export function wireDialog(dialog) {
+  dialog.addEventListener('click', (event) => {
+    if (event.target === dialog) closeDialog(dialog);
+  });
+  dialog.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeDialog(dialog)));
+}
